@@ -3,6 +3,6 @@ servers:
     - {address: '127.0.0.1', port: 8081}
     - {address: '127.0.0.1', port: 8082}
 loadBalancer:
-    - address: '127.0.0.1',
-    - port: 5000
+    address: '127.0.0.1'
+    port: 5000
 # name: example.com
