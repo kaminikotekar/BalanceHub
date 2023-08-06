@@ -1,4 +1,4 @@
-package Server
+package Config
 import (
 	"fmt"
 	"io/ioutil"
@@ -7,28 +7,33 @@ import (
 
 type Server struct{
 	Ipaddress string `yaml:"address"`
-	Port int `yaml:"port"`
+	Port string `yaml:"port"`
 }
 
-type ServerList struct {
-	OriginalServers []Server `yaml:"servers"` 
+type LoadBalancer struct {
+	Ipaddress string `yaml:"address"`
+	Port string `yaml:"port"`
 }
 
-func GetServerList(filename string) (ServerList, error) {
-	var serverList ServerList
+type Config struct {
+	OriginalServers []Server `yaml:"servers"`
+	LoadBalancer LoadBalancer `yaml:"loadBalancer"`
+}
+
+func GetConfiguration(filename string) (Config, error) {
+
+	var config Config
 	yamlFile, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error reading YAML file: %v", err)
-		return serverList, err
+		return config, err
 	}
-
-	err = yaml.Unmarshal(yamlFile, &serverList)
+	err = yaml.Unmarshal(yamlFile, &config)
 	if err != nil {
 		fmt.Println("Error unmarsh ", err)
-		return serverList, err
-	}
-	
-	return serverList, nil
+		return config, err
+	}	
+	return config, nil
 }
 
 
