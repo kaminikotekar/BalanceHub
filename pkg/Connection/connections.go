@@ -25,7 +25,7 @@ func (c *Connections) AddConnection(server Config.Server) {
 }
 
 func (c *Connections) RemoveConnection(server Config.Server) {
-	c.mu.Unlock()
+	c.mu.Lock()
 	c.ActiveConnections[server]--
 	c.mu.Unlock()
 }
