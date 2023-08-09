@@ -33,11 +33,11 @@ func main() {
 	}
 	
 	defer reverseProxy.Close()
-	log.Println("Listening on %s:%s",loadBalancer.Ipaddress, loadBalancer.Port)
+	log.Printf("Listening on %s:%s \n",loadBalancer.Ipaddress, loadBalancer.Port)
 	for {
 		conn, err := reverseProxy.Accept()
 		if err != nil {
-			log.Println("Error accepting: %s", err.Error())
+			log.Printf("Error accepting: %s \n", err.Error())
 			continue
 		}
 		fmt.Println("Received connection from ", conn)
@@ -85,6 +85,7 @@ func writeResponseToBytes(res *http.Response) ([]byte, error){
 func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 
 	remoteServerConnect, err := net.Dial("tcp", uri)
+	fmt.Printf("connect type : %T \n", remoteServerConnect)
 	if err != nil {
 		fmt.Println("Error connecting to original server: ", err)
 		return nil, err
@@ -100,9 +101,9 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 	// Reader 2
 	reader := bufio.NewReader(remoteServerConnect)
 	response, err := http.ReadResponse(reader, nil)
-	defer response.Body.Close()
 	fmt.Printf("type: %T \n", response)
 	fmt.Println("response: ", response.Body)
+	defer response.Body.Close()
 	if err != nil {
 		// fmt.Println("Error reading response:", err2)
 		return nil, err
@@ -118,6 +119,7 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 func handleConnection(conn net.Conn, connectionLoad *Connection.Connections) {
 	
 	defer conn.Close()
+	fmt.Println("Load : ", connectionLoad.ActiveConnections)
 
 	// Create an HTTP request reader
 	reader := bufio.NewReader(conn)
@@ -136,6 +138,11 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections) {
 	fmt.Println("printing optimal server: ......")
 	server := connectionLoad.GetOptimalServer()
 	fmt.Println("Optimal Server: ", server)
+
+	connectionLoad.AddConnection(server)
+	defer connectionLoad.RemoveConnection(server)
+
+	fmt.Println("Load : ", connectionLoad.ActiveConnections)
 
 	response, err := performReverseProxy(request, server.Ipaddress + ":" + server.Port)
 
