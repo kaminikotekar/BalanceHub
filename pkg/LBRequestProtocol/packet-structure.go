@@ -3,7 +3,7 @@ package LBRequestProtocol
 import (
     "fmt"
     "github.com/google/gopacket"
-	"encoding/json"
+	// "encoding/json"
 )
 
 // Create LBRequestLayer
