@@ -3,7 +3,9 @@ CREATE TABLE servers (
     "pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,		
     "ipaddress" varchar(25),
     "port" varchar(10),
-    "constraint" boolean DEFAULT false		
+    "pathconstraint" boolean DEFAULT false,
+    "ipconstraint" boolean DEFAULT false
+
 );
 
 -- create a table for storing url paths

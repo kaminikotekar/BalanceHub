@@ -5,19 +5,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Server struct{
-	Ipaddress string `yaml:"address"`
-	Port string `yaml:"port"`
+
+type ServerRestrictions struct {
+	AllowSubnet []string `yaml:"allow"`
+	DenySubnet []string `yaml:"deny"`
 }
 
 type LoadBalancer struct {
-	Ipaddress string `yaml:"address"`
-	Port string `yaml:"port"`
+	// Ipaddress string `yaml:"address"`
+	Port string `yaml:"listen"`
+	Algorithm string `yaml:"algorithm"`
+	AccessLogs string `yaml:"access-logs"`
+	AccessLogsPath string `yaml:"access-logs-path"`
+	Caching bool `yaml:"caching"`
+	CacheDuration int `yaml:"cache-duration"`
 }
 
 type Config struct {
-	OriginalServers []Server `yaml:"servers"`
-	LoadBalancer LoadBalancer `yaml:"loadBalancer"`
+	OrigServer ServerRestrictions `yaml:"Original-Server"`
+	LoadBalancer LoadBalancer `yaml:"Server"`
+
 }
 
 func GetConfiguration(filename string) (Config, error) {
@@ -33,7 +40,20 @@ func GetConfiguration(filename string) (Config, error) {
 		fmt.Println("Error unmarsh ", err)
 		return config, err
 	}	
+	fmt.Println("Configuration ", config)
 	return config, nil
+}
+
+func (config Config) GetLBServer() string {
+	return "localhost:" + config.LoadBalancer.Port
+}
+
+func (config Config) GetLBIP() string {
+	return "localhost:"
+}
+
+func (config Config) GetLBPort() string {
+	return config.LoadBalancer.Port
 }
 
 

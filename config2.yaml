@@ -1,0 +1,18 @@
+Original-Server:
+    allow: 
+        - 192.168.1.0/24
+        - 192.168.2.0/24
+    deny:
+        - 192.168.3.0/24
+
+Server:
+    listen: 5000
+    algorithm: "Least-Connected"
+    access-logs: true
+    access-logs-path: /var/log
+    caching: true
+    cache-duration: 3000
+
+        
+
+    

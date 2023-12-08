@@ -3,51 +3,51 @@ package Connection
 import (
 	"fmt"
 	"sync"
-	"github.com/kaminikotekar/BalanceHub/pkg/Config"
+	// "github.com/kaminikotekar/BalanceHub/pkg/Config"
+	// "github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 )
 
 type Connections struct {
 	mu sync.Mutex
-	ActiveConnections map[Config.Server] int
+	activeConnections map[int]int
 }
 
-func (c *Connections) InitializeLoadServers(remoteServers []Config.Server) {
-
-	for _, s := range remoteServers {
-		c.ActiveConnections[s] = 0
+func InitConnection(serverIds []int) *Connections {
+	connect := Connections{
+		activeConnections: make(map[int]int),
 	}
+	for _, sid := range serverIds {
+		connect.activeConnections[sid] = 0
+	}
+	return &connect
 }
 
-func (c *Connections) AddConnection(server Config.Server) {
+func (c *Connections) AddConnection(serverId int) {
 	c.mu.Lock()
-	c.ActiveConnections[server]++
+	c.activeConnections[serverId]++
 	c.mu.Unlock()
 }
 
-func (c *Connections) RemoveConnection(server Config.Server) {
+func (c *Connections) RemoveConnection(serverId int) {
 	c.mu.Lock()
-	c.ActiveConnections[server]--
+	c.activeConnections[serverId]--
 	c.mu.Unlock()
 }
 
-func (c *Connections) GetOptimalServer() Config.Server {
+func (c *Connections) GetOptimalServer(servers []int) int {
 	c.mu.Lock()
 	leastConnection := -1
-	// var optimalServer Config.Server
-	optimalServer := Config.Server{
-			Ipaddress: "None",  
-			Port: "None"}
-	for s, connections := range c.ActiveConnections{
+	var optimalServer int
+	for _,sid := range servers{
+		connections := c.activeConnections[sid]
 		if leastConnection == -1{
 			leastConnection = connections
-			optimalServer.Ipaddress = s.Ipaddress
-			optimalServer.Port = s.Port
+			optimalServer = sid
 			continue
 		}
 		if connections < leastConnection{
 			leastConnection = connections
-			optimalServer.Ipaddress = s.Ipaddress
-			optimalServer.Port = s.Port
+			optimalServer = sid
 		}
 	}
 	fmt.Println("Least Connections :", leastConnection)
@@ -56,5 +56,5 @@ func (c *Connections) GetOptimalServer() Config.Server {
 }
 
 func (c *Connections) PrintConnections() {
-	fmt.Println("Connections ", c.ActiveConnections)
+	fmt.Println("Connections ", c.activeConnections)
 }

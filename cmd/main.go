@@ -1,5 +1,7 @@
 package main
-import ("os"
+import (
+	"os"
+	// "io"
 		"log"
 		"bufio"
         "fmt"
@@ -7,33 +9,46 @@ import ("os"
 		"net/http"
 		"net/url"
 		"bytes"
+		"strings"
 		"github.com/kaminikotekar/BalanceHub/pkg/Config"
 		"github.com/kaminikotekar/BalanceHub/pkg/Connection"
+		"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
+		// "github.com/kaminikotekar/BalanceHub/pkg/LBRequestProtocol"
 )
 
 
 func main() {
 	log.Println("Starting HTTP server...")
-	config, err := Config.GetConfiguration("config.yaml")
-	
-	loadBalancer := config.LoadBalancer
-	remoteServers := config.OriginalServers
-	connectionLoad := &Connection.Connections{
-		ActiveConnections: make(map[Config.Server]int),
+	lmap, error := Connection.LoadDB("RemoteServer.db")
+	fmt.Println(lmap)
+	if error {
+		return
 	}
-	connectionLoad.InitializeLoadServers(remoteServers)
 
-	fmt.Println("loaad: ", connectionLoad)
-	fmt.Println("Server List ", remoteServers)
+	config, err := Config.GetConfiguration("config2.yaml")
+	fmt.Println("config2.yaml ", config,  "err ", err)
+	fmt.Println("LB server: ", config.GetLBServer())
 
-	reverseProxy, err := net.Listen("tcp", loadBalancer.Ipaddress+":"+loadBalancer.Port)
+	connections := Connection.InitConnection(lmap.GetServerIds())
+	// loadBalancer := config.LoadBalancer
+	// remoteServers := config.OriginalServers
+	// connectionLoad := &Connection.Connections{
+	// 	ActiveConnections: make(map[Config.Server]int),
+	// }
+	// connectionLoad.InitializeLoadServers(remoteServers)
+	// LBRequestProtocol.Test()
+
+	// fmt.Println("loaad: ", connectionLoad)
+	// fmt.Println("Server List ", remoteServers)
+
+	reverseProxy, err := net.Listen("tcp", config.GetLBServer())
 	if err != nil {
 		log.Printf("Error listening: %s", err.Error())
 		os.Exit(1)
 	}
 	
 	defer reverseProxy.Close()
-	log.Printf("Listening on %s:%s \n",loadBalancer.Ipaddress, loadBalancer.Port)
+	log.Printf("Listening on %s:%s \n",config.GetLBIP(), config.GetLBPort())
 	for {
 		conn, err := reverseProxy.Accept()
 		if err != nil {
@@ -42,7 +57,7 @@ func main() {
 		}
 		fmt.Println("Received connection from ", conn)
 		// read data from connection
-		go handleConnection(conn, connectionLoad)
+		go handleConnection(conn, connections, lmap)
 	}
 }
 
@@ -116,41 +131,87 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 	return  bytesToSend, nil
 }
 
-func handleConnection(conn net.Conn, connectionLoad *Connection.Connections) {
+func parseHTTPRequest(req []byte) (*http.Request, error) {
+
+	reqString := string(req)
+	bufioReader := bufio.NewReader(strings.NewReader(reqString))
+	request, err := http.ReadRequest(bufioReader)
+	return request, err
+
+}
+
+func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
 	
 	defer conn.Close()
-	fmt.Println("Load : ", connectionLoad.ActiveConnections)
+	fmt.Println("Load : ")
+	connectionLoad.PrintConnections()
 
 	// Create an HTTP request reader
-	reader := bufio.NewReader(conn)
+   	reader := bufio.NewReader(conn)
 
-	// Read the HTTP request
-	request, err := http.ReadRequest(reader)
 
-	fmt.Println("request: ", request)
-	fmt.Printf("type: %T \n", request)
+	// Loop throught the buffer to read all bytes
+	buffer := make([]byte,0)
+	for {
+		
+		_byte, err := reader.ReadByte()
+		if err!=nil {
+			break
+		}
+		buffer = append(buffer, _byte)
+	}
+
+	fmt.Println("**************Reading from  connection" , buffer)
+
+	if buffer[0] == 76 && buffer[1] == 66{
+		fmt.Println("Handle LB request")
+		// conn.Write(CustomPacket.Test())
+		// TODO: handle LB request
+		return
+	}
+
+	fmt.Println("HTTP request : ", string(buffer))
+
+	req, err := parseHTTPRequest(buffer)
+
+	// request, err := http.ReadRequest(reader)
+
+	fmt.Println("request: ", req)
+	fmt.Printf("type: %T \n", req)
 	if err != nil {
 		fmt.Println("Error reading HTTP request:", err)
 		return
 	}
 
 	// Find Server with least active connection
+	url := req.URL.Path
+
+	fmt.Println("url: ", url)
+	fmt.Println("RemoteAddr: ")
+	fmt.Println("RemoteAddr: ", req.RemoteAddr)
+	// TODO: check if the client is allowed to connect
+
+	allowedServers := lmap.GetPossibleServers("127.0.0.1", url)
+
+	fmt.Println("allowedServers: ", allowedServers)
+
 	fmt.Println("printing optimal server: ......")
-	server := connectionLoad.GetOptimalServer()
-	fmt.Println("Optimal Server: ", server)
+	server := connectionLoad.GetOptimalServer(allowedServers)
+	fmt.Printf("server returned: %v\n", server)
+	fmt.Println("Optimal Server: ", lmap.GetServerFromId(server))
 
 	connectionLoad.AddConnection(server)
 	defer connectionLoad.RemoveConnection(server)
 
-	fmt.Println("Load : ", connectionLoad.ActiveConnections)
 
-	response, err := performReverseProxy(request, server.Ipaddress + ":" + server.Port)
 
-	if err != nil {
-		fmt.Println(err)
-		return
+}
+
+func decodeTCPPacket(reader *bufio.Reader) {
+	action, _ := reader.ReadByte()
+	if (action == 0XF0){
+		fmt.Println("Request for Regiist")
 	}
-	conn.Write(response)
 
 }
 

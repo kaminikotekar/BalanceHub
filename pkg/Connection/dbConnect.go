@@ -17,14 +17,14 @@ const(
 )
 
 /*-----------------------------------------------------------------------------------------*/
-func LoadDB(dbpath string) bool{
+func LoadDB(dbpath string) (*RemoteServer.Map, bool){
 
 	sqliteDB, err := sql.Open("sqlite3", dbpath)
 	defer sqliteDB.Close() 
 	if err != nil {
 		fmt.Println("Error ,", err)
 		fmt.Println("Database, ", sqliteDB)
-		return true
+		return nil,true
 	}
 
 	_, error := os.Stat(dbpath)
@@ -33,64 +33,73 @@ func LoadDB(dbpath string) bool{
 		_, err := os.Create(dbpath)  //create a new file
 		if err != nil {
 			fmt.Println("could not create database")
-			return true
+			return nil,true
 		}
 		initSQL, err := ioutil.ReadFile("init.sql")
 		if err != nil {
 			fmt.Println("could not load sql init file")
-			return true
+			return nil,true
 		}
 		_, err = sqliteDB.Exec(string(initSQL))
 		if err != nil{
 			fmt.Println("Could not execute init file ", err)
-			return true
+			return nil,true
 		}
 	}
 
 	if createIfNotExist(sqliteDB) != nil {
-		return true
+		return nil,true
 	}
 	fmt.Println("Successfully created all tables in database")
 
 	if insertServer(sqliteDB, "10.1.0.34", "80") != nil {
 		fmt.Println("Error while inserting server")
-		return true
+		return nil,true
 	}
 
 	if insertServer(sqliteDB, "10.1.0.34", "81") != nil {
 		fmt.Println("Error while inserting server")
-		return true
+		return nil,true
 	}
 
 	if showTable(sqliteDB) != nil {
 		fmt.Println("Error while printing table")
-		return true
+		return nil,true
 	}
 
 	if insertPath(sqliteDB, "/path1", 1) != nil {
 		fmt.Println("Error while inserting path")
-		return true
+		return nil,true
 	}
 
 	if insertPath(sqliteDB, "/path2", 2) != nil {
 		fmt.Println("Error while inserting path")
-		return true
+		return nil,true
 	}
 
-	remoteServers := make(map[int]*RemoteServer.Server)
-	if loadRemoteServers(sqliteDB, remoteServers) != nil {
+	if insertClient(sqliteDB, "127.0.0.2", 1) != nil {
+		fmt.Println("Error while inserting client constraint")
+		return nil,true
+	}
+
+	localMap := RemoteServer.GenerateMap()
+	// remoteServers := make(map[int]*RemoteServer.Server)
+	if loadRemoteServers(sqliteDB, localMap) != nil {
 		fmt.Println("Error while loading servers")
-		return true
+		return nil,true
 	}
-
-	paths := RemoteServer.GeneratePaths()
 	
-	if loadPaths(sqliteDB, remoteServers, paths) != nil {
+	if loadPaths(sqliteDB, localMap) != nil {
 		fmt.Println("Error while loading paths")
-		return true
+		return nil,true
 	}
 
-	return false
+	if loadIpConstraint(sqliteDB, localMap) != nil {
+		fmt.Println("Error while loading IP constraints")
+		return nil,true
+	}
+
+	return localMap, false
 }
 
 /*-----------------------------------------------------------------------------------------*/
@@ -129,7 +138,8 @@ func createTable(dbCon *sql.DB, tableName string)  error{
 			"pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,		
 			"ipaddress" varchar(25),
 			"port" varchar(10),
-			"constraint" boolean DEFAULT false		
+			"pathconstraint" boolean DEFAULT false,
+			"ipconstraint" boolean DEFAULT false	
 		);`
 	} else if tableName == PATH_MAPPING_TABLE_NAME {
 		query = `
@@ -153,9 +163,9 @@ func createTable(dbCon *sql.DB, tableName string)  error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func loadRemoteServers(dbCon *sql.DB, servers map[int]*RemoteServer.Server) error{
+func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
 
-	query := "SELECT pkid, ipaddress, port FROM servers"
+	query := "SELECT * FROM servers"
 	rows, err := dbCon.Query(query)
 	if err != nil {
 		return err
@@ -166,16 +176,15 @@ func loadRemoteServers(dbCon *sql.DB, servers map[int]*RemoteServer.Server) erro
 		var id int
 		var ipaddress string
 		var port string
+		var pathConst bool
+		var ipConst bool
 
-		rows.Scan(&id, &ipaddress, &port)
-		log.Println("Row: ", id, " ", ipaddress, " ", port)
+		rows.Scan(&id, &ipaddress, &port, &pathConst, &ipConst)
+		log.Println("Row: ", id, " ", ipaddress, " ", port, " ", pathConst, " ", ipConst)
 		
-		servers[id] = &RemoteServer.Server{
-			Ipaddress: ipaddress,
-			Port: port,
-		}
+		m.AddServer(id, ipaddress, port, pathConst, ipConst)
 	}
-	fmt.Println("Servers: ", servers)
+	fmt.Println("Servers: ", m)
 	return nil
 }
 
@@ -211,6 +220,18 @@ func insertPath(dbCon *sql.DB, path string, hostID int) error {
 
 	insertSQL := `INSERT INTO pathmappings(path, serverid) VALUES (?, ?)`
 	err := QxecuteQuery(dbCon, insertSQL, path, fmt.Sprint(hostID))
+	updateServer := `UPDATE servers SET pathconstraint = 'TRUE' WHERE pkid =?`
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
+	return err
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func insertClient(dbCon *sql.DB, clientIp string, hostID int) error {
+
+	insertSQL := `INSERT INTO addressmappings(ipaddress, serverid) VALUES (?, ?)`
+	err := QxecuteQuery(dbCon, insertSQL, clientIp, fmt.Sprint(hostID))
+	updateServer := `UPDATE servers SET ipconstraint = 'TRUE' WHERE pkid =?`
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
 	return err
 }
 
@@ -236,9 +257,7 @@ func showTable(dbCon *sql.DB) error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func loadPaths(dbCon *sql.DB, 
-				servers map[int]*RemoteServer.Server, 
-				paths *RemoteServer.Paths) error{
+func loadPaths(dbCon *sql.DB, m *RemoteServer.Map) error{
 
 	fmt.Println("Inside loadPaths")
 	showPaths := `
@@ -259,11 +278,44 @@ func loadPaths(dbCon *sql.DB,
 		var id int
 		rows.Scan(&id, &path, &ipaddress, &port)
 		log.Println("Row: ", id, " ", path, " ", ipaddress, " ", port)
-		log.Println("server for path: ", servers[id])
-		paths.UpdatePath(path, id, servers[id])	
+		// log.Println("server for path: ", servers[id])
+		m.UpdatePath(path, id)
+
 	}
 
-	fmt.Println("Paths: ", paths)
+	fmt.Println("Paths: ", m)
+	return nil
+
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func loadIpConstraint(dbCon *sql.DB, m *RemoteServer.Map) error{
+
+	fmt.Println("Inside loadIpConstraint")
+	showIpConstraints := `
+		SELECT s.pkid, i.ipaddress, s.ipaddress, s.port FROM addressmappings AS i
+			LEFT JOIN servers AS s ON s.pkid = i.serverid;
+		`
+	rows, err := dbCon.Query(showIpConstraints)
+	if err != nil {
+		fmt.Println("Error ", err.Error())
+		return err
+	}
+	defer rows.Close() 
+
+	for rows.Next() { 
+		var clientIp string
+		var ipaddress string
+		var port string
+		var id int
+		rows.Scan(&id, &clientIp, &ipaddress, &port)
+		log.Println("Row: ", id, " ", clientIp, " ", ipaddress, " ", port)
+		// log.Println("server for path: ", servers[id])
+		m.UpdateClientIP(clientIp, id)
+
+	}
+
+	fmt.Println("IP map: ", m)
 	return nil
 
 }
