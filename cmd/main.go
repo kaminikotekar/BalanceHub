@@ -1,7 +1,7 @@
 package main
 import (
 	"os"
-	// "io"
+	"io"
 		"log"
 		"bufio"
         "fmt"
@@ -140,6 +140,37 @@ func parseHTTPRequest(req []byte) (*http.Request, error) {
 
 }
 
+func isEndOfHttpRequest(buffer []byte) bool {
+	buffLength := len(buffer)
+	if buffLength >= 4 {
+		return string(buffer[buffLength-4:]) == "\r\n\r\n"
+	}
+	return false
+}
+
+func getHttpRequestInBytes (status string, statusCode int, body string, headers map[string]string) ([]byte, error) {
+	response := http.Response{
+		Status: status,
+		StatusCode: statusCode,
+		Proto: "HTTP/1.1",
+		ProtoMajor:    1,
+		  ProtoMinor:    1,
+		Body: io.NopCloser(bytes.NewBufferString(body)),
+		Header: make(http.Header, 0),
+	}
+	for key,value := range headers {
+		response.Header.Set(key, value)
+	}
+	
+	buf := bytes.NewBuffer(nil)
+	err := response.Write(buf)
+	if err != nil {	
+		fmt.Println("err", err)
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
 	
 	defer conn.Close()
@@ -149,17 +180,24 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 	// Create an HTTP request reader
    	reader := bufio.NewReader(conn)
 
-
+	fmt.Println("after creating reader ")
 	// Loop throught the buffer to read all bytes
 	buffer := make([]byte,0)
 	for {
 		
 		_byte, err := reader.ReadByte()
+		fmt.Println("error reading byte ", err)
+		fmt.Println("byte: ", _byte)
 		if err!=nil {
 			break
 		}
 		buffer = append(buffer, _byte)
+		if isEndOfHttpRequest(buffer){
+			break
+		}
+		
 	}
+	fmt.Println("after reading bytes")
 
 	fmt.Println("**************Reading from  connection" , buffer)
 
@@ -178,6 +216,7 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 
 	fmt.Println("request: ", req)
 	fmt.Printf("type: %T \n", req)
+	fmt.Println("req body: ", req.Body)
 	if err != nil {
 		fmt.Println("Error reading HTTP request:", err)
 		return
@@ -196,15 +235,34 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 	fmt.Println("allowedServers: ", allowedServers)
 
 	fmt.Println("printing optimal server: ......")
-	server := connectionLoad.GetOptimalServer(allowedServers)
-	fmt.Printf("server returned: %v\n", server)
-	fmt.Println("Optimal Server: ", lmap.GetServerFromId(server))
+	remoteServerId := connectionLoad.GetOptimalServer(allowedServers)
 
-	connectionLoad.AddConnection(server)
-	defer connectionLoad.RemoveConnection(server)
+	if remoteServerId == 0 {
+		resBytes , err := getHttpRequestInBytes("401 Unauthorized", 
+												http.StatusUnauthorized,
+												"Unauthorized access",
+												map[string]string{
+													"Content-Type": "text/plain",
+												})
+		if err != nil {	
+			conn.Write([]byte("Something went wrong"))
+			return
+		}
+		conn.Write(resBytes)
+		return
+	}
+	fmt.Printf("server returned: %v\n", remoteServerId)
+	remoteServer := lmap.GetServerFromId(remoteServerId)
+	fmt.Println("Optimal Server: ", remoteServer)
 
+	connectionLoad.AddConnection(remoteServerId)
+	defer connectionLoad.RemoveConnection(remoteServerId)
 
-
+	dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
+	if err != nil {
+		conn.Write([]byte("Server Error: " + err.Error()))
+	}
+	conn.Write(dataToBereturned)
 }
 
 func decodeTCPPacket(reader *bufio.Reader) {
