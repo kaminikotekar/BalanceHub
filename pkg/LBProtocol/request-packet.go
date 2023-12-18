@@ -1,11 +1,30 @@
-package LBRequestProtocol
+package LBProtocol
 
 import (
     "fmt"
+    "errors"
     "github.com/google/gopacket"
-	// "encoding/json"
+	"encoding/json"
 )
 
+// Register the layer type
+var LBLayerType = gopacket.RegisterLayerType(
+    2001,
+    gopacket.LayerTypeMetadata{
+        "LBRequestLayer",
+        gopacket.DecodeFunc(decodeLBRequest),
+    },
+)
+
+type Mappings struct {
+	Paths []string
+	Address string
+}
+
+type LBPacket struct {
+    Action bool
+    Payload Mappings
+}
 // Create LBRequestLayer
 type LBRequestLayer struct {
     Protocol [2]byte
@@ -14,22 +33,8 @@ type LBRequestLayer struct {
     Payload  []byte
 }
 
-type Mappings struct {
-	paths []string
-	address string
-}
-
-// Register the layer type
-var CustomLayerType = gopacket.RegisterLayerType(
-    2001,
-    gopacket.LayerTypeMetadata{
-        "LBRequestLayer",
-        gopacket.DecodeFunc(decodeLBRequest),
-    },
-)
-
 func (l LBRequestLayer) LayerType() gopacket.LayerType {
-    return CustomLayerType
+    return LBLayerType
 }
 
 func (l LBRequestLayer) LayerContents() []byte {
@@ -70,4 +75,31 @@ func (l LBRequestLayer) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Se
     byteArray[3] = l.RemainingLength
     byteArray = append(byteArray[:4], l.Payload...)
     return err
+}
+
+func (l LBRequestLayer) Deserialize() (*LBPacket, error) {
+    
+    action := false
+    if l.Action == 0xF0{
+        action = true
+    } else if l.Action == 0x0F{
+        action = false
+    } else {
+        return nil, errors.New("Invalid Action")
+    }
+
+    fmt.Println("Inside deserialization, payload: ", l.Payload)
+    var payload Mappings
+    err := json.Unmarshal(l.Payload, &payload )
+    if err != nil  {
+        return nil, err
+    }
+
+    packet := LBPacket {
+        Action: action,
+        Payload: payload,
+    }
+
+    return &packet, nil
+
 }

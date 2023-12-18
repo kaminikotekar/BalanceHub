@@ -10,12 +10,12 @@ import (
 		"net/url"
 		"bytes"
 		"strings"
+		"github.com/google/gopacket"
 		"github.com/kaminikotekar/BalanceHub/pkg/Config"
 		"github.com/kaminikotekar/BalanceHub/pkg/Connection"
 		"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
-		// "github.com/kaminikotekar/BalanceHub/pkg/LBRequestProtocol"
+		"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
 )
-
 
 func main() {
 	log.Println("Starting HTTP server...")
@@ -171,6 +171,53 @@ func getHttpRequestInBytes (status string, statusCode int, body string, headers 
 	return buf.Bytes(), nil
 }
 
+func readBytes(c chan []byte, reader *bufio.Reader){
+	buffer := make([]byte,4)
+	// Read 4 bytes of header 
+	reader.Read(buffer[:4])
+	remainingLength := 0
+
+	// check if LB request
+	if buffer[0] == 76 && buffer[1] == 66 {
+		remainingLength = int(buffer[3])
+		fmt.Println("remaining length ", remainingLength)
+	}
+
+	payloadLength := 1
+	newPacket := false
+	for {
+		_byte, err := reader.ReadByte()
+		fmt.Println("error reading byte ", err)
+		fmt.Println("byte: ", _byte)
+		if err != nil {
+			c <- buffer
+			break
+		}
+		buffer = append(buffer, _byte)
+		if isEndOfHttpRequest(buffer){
+			// Reached end of packet, allow receiving new packet
+			newPacket = true
+		}
+		if remainingLength == payloadLength{
+			// Reached end of packet, allow receiving new packet
+			newPacket = true
+		}
+		if newPacket == true {
+			// Push to the channel and continue
+			c <- buffer
+			buffer = buffer[:0]
+			_, err = reader.Read(buffer[:4])
+			if err != nil {
+				break
+			} else {
+				newPacket = false
+			}
+		}
+		payloadLength += 1
+		
+	}
+}
+
 func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
 	
 	defer conn.Close()
@@ -181,30 +228,22 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
    	reader := bufio.NewReader(conn)
 
 	fmt.Println("after creating reader ")
+
 	// Loop throught the buffer to read all bytes
-	buffer := make([]byte,0)
-	for {
-		
-		_byte, err := reader.ReadByte()
-		fmt.Println("error reading byte ", err)
-		fmt.Println("byte: ", _byte)
-		if err!=nil {
-			break
-		}
-		buffer = append(buffer, _byte)
-		if isEndOfHttpRequest(buffer){
-			break
-		}
-		
-	}
+
+	c := make(chan []byte)
+	go readBytes(c, reader)
 	fmt.Println("after reading bytes")
 
-	fmt.Println("**************Reading from  connection" , buffer)
-
+	// fmt.Println("**************Reading from  connection" , buffer)
+	buffer := <-c
 	if buffer[0] == 76 && buffer[1] == 66{
 		fmt.Println("Handle LB request")
 		// conn.Write(CustomPacket.Test())
 		// TODO: handle LB request
+		res := decodeLBPacket(buffer)
+		fmt.Println("sending res " ,res)
+		conn.Write(res)
 		return
 	}
 
@@ -265,12 +304,53 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 	conn.Write(dataToBereturned)
 }
 
-func decodeTCPPacket(reader *bufio.Reader) {
-	action, _ := reader.ReadByte()
-	if (action == 0XF0){
-		fmt.Println("Request for Regiist")
+func decodeLBPacket(buffer []byte) []byte{
+	
+	// action := buffer[2]
+	remainingLength := buffer[3]
+	// payload := buffer[4: remainingLength]
+
+	packet := gopacket.NewPacket(buffer[:4+remainingLength], 
+		LBProtocol.LBLayerType,
+		gopacket.Default)
+
+	fmt.Println("packet: ")
+
+	customLayer := packet.Layer(LBProtocol.LBLayerType)
+	customLayerContent, _ := customLayer.(*LBProtocol.LBRequestLayer)
+	decodedPacket, err := customLayerContent.Deserialize()
+
+	fmt.Println("decoded packet: ", decodedPacket)
+	fmt.Println("error : ", err)
+
+	// Create res packet
+	rawBytes := []byte("RE")
+	var message []byte
+	if err != nil {
+
+		rawBytes = append(rawBytes, 0xFF)
+		message = []byte("Could not decode packet")
+		// fmt.Println("remaining length byte: ", byte(len(pydata)) )
+
+	} else{
+		rawBytes = append(rawBytes, 0x00)
+		message = []byte("Success")
 	}
 
+	rawBytes = append(rawBytes, byte(len(message)))
+	pData := append(rawBytes, message...)
+	res := gopacket.NewPacket(
+		pData,
+		LBProtocol.ErrLayerType,
+		gopacket.Default,
+	)
+	
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{}
+
+	err = gopacket.SerializePacket(buf, opts, res)
+
+	return buf.Bytes()
 }
 
 
