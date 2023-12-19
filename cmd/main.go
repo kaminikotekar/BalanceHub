@@ -2,6 +2,8 @@ package main
 import (
 	"os"
 	"io"
+	"time"
+	"errors"
 		"log"
 		"bufio"
         "fmt"
@@ -16,6 +18,11 @@ import (
 		"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 		"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
 )
+
+type Packet struct {
+	PacType string
+	Data []byte
+}
 
 func main() {
 	log.Println("Starting HTTP server...")
@@ -171,30 +178,42 @@ func getHttpRequestInBytes (status string, statusCode int, body string, headers 
 	return buf.Bytes(), nil
 }
 
-func readBytes(c chan []byte, reader *bufio.Reader){
-	buffer := make([]byte,4)
-	// Read 4 bytes of header 
-	reader.Read(buffer[:4])
+func readHeader(reader *bufio.Reader) (*Packet, int, error) {
+	p := Packet {
+		Data : make([]byte, 4),
+	}
+	_, err := reader.Read(p.Data[:4])
+	if err != nil {
+		return nil, 0 , err
+	}
 	remainingLength := 0
 
 	// check if LB request
-	if buffer[0] == 76 && buffer[1] == 66 {
-		remainingLength = int(buffer[3])
+	if p.Data[0] == 76 && p.Data[1] == 66 {
+		remainingLength = int(p.Data[3])
+		p.PacType = "LB"
 		fmt.Println("remaining length ", remainingLength)
 	}
+	return &p, remainingLength, nil
+}
 
-	payloadLength := 1
-	newPacket := false
+func readBytes(c chan *Packet, reader *bufio.Reader){
+
+	packet, remainingLength, err := readHeader(reader)
+	if err != nil {
+		close(c)
+		return
+	}
+
+	payloadLength, newPacket := 1, false
 	for {
 		_byte, err := reader.ReadByte()
-		fmt.Println("error reading byte ", err)
-		fmt.Println("byte: ", _byte)
 		if err != nil {
-			c <- buffer
+			c <- packet
 			break
 		}
-		buffer = append(buffer, _byte)
-		if isEndOfHttpRequest(buffer){
+		packet.Data = append(packet.Data, _byte)
+		if isEndOfHttpRequest(packet.Data){
 			// Reached end of packet, allow receiving new packet
 			newPacket = true
 		}
@@ -204,70 +223,55 @@ func readBytes(c chan []byte, reader *bufio.Reader){
 		}
 		if newPacket == true {
 			// Push to the channel and continue
-			c <- buffer
-			buffer = buffer[:0]
-			_, err = reader.Read(buffer[:4])
-			if err != nil {
-				break
-			} else {
-				newPacket = false
+			fmt.Println("reached packet end : ", packet.Data)
+			c <- packet
+			payloadLength = 0
+			packet, remainingLength, err = readHeader(reader)
+			if err != nil { break
 			}
+			newPacket = false
 		}
-		payloadLength += 1
-		
+		payloadLength += 1	
+	}
+
+	for {
+		if len(c) == 0 {
+			close(c)
+			break
+		}
 	}
 }
 
-func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
-	
-	defer conn.Close()
-	fmt.Println("Load : ")
-	connectionLoad.PrintConnections()
+func (packet *Packet) handlePacket(connectionLoad *Connection.Connections, lmap *RemoteServer.Map) ([]byte, error) {
 
-	// Create an HTTP request reader
-   	reader := bufio.NewReader(conn)
-
-	fmt.Println("after creating reader ")
-
-	// Loop throught the buffer to read all bytes
-
-	c := make(chan []byte)
-	go readBytes(c, reader)
-	fmt.Println("after reading bytes")
-
-	// fmt.Println("**************Reading from  connection" , buffer)
-	buffer := <-c
-	if buffer[0] == 76 && buffer[1] == 66{
+	fmt.Println("buffer received : ", packet.Data)
+	if packet.PacType == "LB" {
 		fmt.Println("Handle LB request")
-		// conn.Write(CustomPacket.Test())
-		// TODO: handle LB request
-		res := decodeLBPacket(buffer)
+		res := decodeLBPacket(packet.Data)
 		fmt.Println("sending res " ,res)
-		conn.Write(res)
-		return
+		return res, nil
 	}
 
-	fmt.Println("HTTP request : ", string(buffer))
+	fmt.Println("HTTP request : ", string(packet.Data))
 
-	req, err := parseHTTPRequest(buffer)
+	req, err := parseHTTPRequest(packet.Data)
 
-	// request, err := http.ReadRequest(reader)
-
+	if req == nil {
+		return nil, errors.New("Invalid request")
+	}
 	fmt.Println("request: ", req)
 	fmt.Printf("type: %T \n", req)
 	fmt.Println("req body: ", req.Body)
 	if err != nil {
 		fmt.Println("Error reading HTTP request:", err)
-		return
+		return nil, err
 	}
 
 	// Find Server with least active connection
 	url := req.URL.Path
 
 	fmt.Println("url: ", url)
-	fmt.Println("RemoteAddr: ")
 	fmt.Println("RemoteAddr: ", req.RemoteAddr)
-	// TODO: check if the client is allowed to connect
 
 	allowedServers := lmap.GetPossibleServers("127.0.0.1", url)
 
@@ -284,12 +288,11 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 													"Content-Type": "text/plain",
 												})
 		if err != nil {	
-			conn.Write([]byte("Something went wrong"))
-			return
+			return []byte("Something went wrong"),nil
 		}
-		conn.Write(resBytes)
-		return
+		return resBytes,nil
 	}
+
 	fmt.Printf("server returned: %v\n", remoteServerId)
 	remoteServer := lmap.GetServerFromId(remoteServerId)
 	fmt.Println("Optimal Server: ", remoteServer)
@@ -299,9 +302,35 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 
 	dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
 	if err != nil {
-		conn.Write([]byte("Server Error: " + err.Error()))
+		return []byte("Server Error: " + err.Error()), nil
 	}
-	conn.Write(dataToBereturned)
+	fmt.Println("Data to Bereturned: ", dataToBereturned)
+	return dataToBereturned, nil
+}
+
+func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
+	
+	defer conn.Close()
+	connectionLoad.PrintConnections()
+	conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+
+	// Create an request reader
+   	reader := bufio.NewReader(conn)
+
+	c := make(chan *Packet)
+	go readBytes(c, reader)
+
+	for {
+		packet, ok := <-c
+		if !ok {
+			break
+		}
+		rdata, err := packet.handlePacket(connectionLoad, lmap)
+		if err != nil {
+			break
+		}
+		conn.Write(rdata)
+	}
 }
 
 func decodeLBPacket(buffer []byte) []byte{

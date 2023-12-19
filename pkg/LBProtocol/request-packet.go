@@ -103,3 +103,62 @@ func (l LBRequestLayer) Deserialize() (*LBPacket, error) {
     return &packet, nil
 
 }
+
+
+func Test(){
+    // If you create your own encoding and decoding you can essentially
+    // create your own protocol or implement a protocol that is not
+    // already defined in the layers package. In our example we are just
+    // wrapping a normal ethernet packet with our own layer.
+    // Creating your own protocol is good if you want to create
+    // some obfuscated binary data type that was difficult for others
+    // to decode
+
+    // Finally, decode your packets:
+    // rawBytes := []byte{0xF0, 65, 65, 66, 67, 68}
+    rawBytes := []byte("LB")
+	rawBytes = append(rawBytes, 0xF0)
+
+
+	payloadData := Mappings{
+		Paths: []string{"/getList", "/PostList"},
+		Address: "SomeAddress",
+	}
+	pydata ,_ := json.Marshal(payloadData)
+	pData := append(rawBytes, pydata...)
+    packet := gopacket.NewPacket(
+        pData,
+        LBLayerType,
+        gopacket.Default,
+    )
+
+    fmt.Println("Created packet out of raw bytes.")
+    fmt.Println(packet)
+	fmt.Printf("Type packet %T \n", packet)
+
+    // Decode the packet as our custom layer
+    customLayer := packet.Layer(LBLayerType)
+    if customLayer != nil {
+        fmt.Println("Packet was successfully decoded with custom layer decoder.")
+        customLayerContent, _ := customLayer.(*LBRequestLayer)
+        // Now we can access the elements of the custom struct
+        fmt.Println("Payload: ", customLayerContent.LayerPayload())
+        fmt.Println("SomeByte element:", customLayerContent.Action)
+        // fmt.Println("AnotherByte element:", customLayerContent.AnotherByte)
+    }
+
+    buf := gopacket.NewSerializeBuffer()
+    opts := gopacket.SerializeOptions{} 
+
+
+    // var bytesToSend []byte
+	for _, layer := range packet.Layers() {
+		fmt.Println("PACKET LAYER:", layer.LayerType())
+
+	}
+
+    err := gopacket.SerializePacket(buf, opts, packet)
+    fmt.Println("err: ", err)
+    fmt.Println("Packet bytes: ", buf.Bytes())
+	// return packet
+}
