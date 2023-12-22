@@ -4,7 +4,8 @@ CREATE TABLE servers (
     "ipaddress" varchar(25),
     "port" varchar(10),
     "pathconstraint" boolean DEFAULT false,
-    "ipconstraint" boolean DEFAULT false
+    "ipconstraint" boolean DEFAULT false,
+    UNIQUE(ipaddress, port)
 
 );
 
@@ -13,7 +14,8 @@ CREATE TABLE pathmappings (
     "pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
     "path" text,
     "serverid" integer NOT NULL,
-    FOREIGN KEY(serverid) REFERENCES servers(pkid)
+    FOREIGN KEY(serverid) REFERENCES servers(pkid),
+    UNIQUE(path, serverid)
 );
 
 -- Create a table for storing ip constraints
@@ -21,5 +23,6 @@ CREATE TABLE addressmappings(
     "pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
     "ipaddress" varchar(25),
     "serverid" integer NOT NULL,
-    FOREIGN KEY(serverid) REFERENCES servers(pkid)
+    FOREIGN KEY(serverid) REFERENCES servers(pkid),
+     UNIQUE(ipaddress, serverid)
 );

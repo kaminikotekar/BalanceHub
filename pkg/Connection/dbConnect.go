@@ -17,14 +17,14 @@ const(
 )
 
 /*-----------------------------------------------------------------------------------------*/
-func LoadDB(dbpath string) (*RemoteServer.Map, bool){
+func LoadDB(dbpath string) (bool){
 
 	sqliteDB, err := sql.Open("sqlite3", dbpath)
 	defer sqliteDB.Close() 
 	if err != nil {
 		fmt.Println("Error ,", err)
 		fmt.Println("Database, ", sqliteDB)
-		return nil,true
+		return true
 	}
 
 	_, error := os.Stat(dbpath)
@@ -33,73 +33,137 @@ func LoadDB(dbpath string) (*RemoteServer.Map, bool){
 		_, err := os.Create(dbpath)  //create a new file
 		if err != nil {
 			fmt.Println("could not create database")
-			return nil,true
+			return true
 		}
 		initSQL, err := ioutil.ReadFile("init.sql")
 		if err != nil {
 			fmt.Println("could not load sql init file")
-			return nil,true
+			return true
 		}
 		_, err = sqliteDB.Exec(string(initSQL))
 		if err != nil{
 			fmt.Println("Could not execute init file ", err)
-			return nil,true
+			return true
 		}
 	}
 
 	if createIfNotExist(sqliteDB) != nil {
-		return nil,true
+		return true
 	}
 	fmt.Println("Successfully created all tables in database")
 
-	if insertServer(sqliteDB, "10.1.0.34", "80") != nil {
-		fmt.Println("Error while inserting server")
-		return nil,true
-	}
+	// txn, err := sqliteDB.Begin()
+	// if id,err := insertServer(txn, "10.1.0.34", "80"); err != nil {
+	// 	fmt.Println("Error while inserting server")
+	// 	return nil,true
+	// }else{
+	// 	fmt.Println("Successfully inserted server ",id)
+	// }
 
-	if insertServer(sqliteDB, "10.1.0.34", "81") != nil {
-		fmt.Println("Error while inserting server")
-		return nil,true
-	}
+	// if id,err := insertServer(txn, "10.1.0.34", "81"); err != nil {
+	// 	fmt.Println("Error while inserting server")
+	// 	return nil,true
+	// } else{
+	// 	fmt.Println("Successfully inserted server ",id)
+	// }
+
+	// if id,err := insertServer(txn, "127.0.0.1", "8080"); err != nil {
+	// 	fmt.Println("Error while inserting server")
+	// 	return nil,true
+	// }else{
+	// 	fmt.Println("Successfully inserted server ",id)
+	// }
 
 	if showTable(sqliteDB) != nil {
 		fmt.Println("Error while printing table")
-		return nil,true
+		return true
 	}
 
-	if insertPath(sqliteDB, "/path1", 1) != nil {
-		fmt.Println("Error while inserting path")
-		return nil,true
-	}
+	// if insertPath(txn, 1, "/path2", "1") != nil {
+	// 	fmt.Println("Error while inserting path")
+	// 	return nil,true
+	// }
 
-	if insertPath(sqliteDB, "/path2", 2) != nil {
-		fmt.Println("Error while inserting path")
-		return nil,true
-	}
+	// if insertPath(txn, 3, "/path1", "3") != nil {
+	// 	fmt.Println("Error while inserting path")
+	// 	return nil,true
+	// }
 
-	if insertClient(sqliteDB, "127.0.0.2", 1) != nil {
-		fmt.Println("Error while inserting client constraint")
-		return nil,true
-	}
+	// if insertPath(txn, 2, "/path2", "2") != nil {
+	// 	fmt.Println("Error while inserting path")
+	// 	return nil,true
+	// }
 
-	localMap := RemoteServer.GenerateMap()
+	// if insertClient(txn, 1, "127.0.0.5", "1") != nil {
+	// 	fmt.Println("Error while inserting client constraint")
+	// 	return nil,true
+	// }
+	// txn.Commit()
+	// localMap := RemoteServer.GenerateMap()
 	// remoteServers := make(map[int]*RemoteServer.Server)
-	if loadRemoteServers(sqliteDB, localMap) != nil {
+	RemoteServer.GenerateMap()
+	if loadRemoteServers(sqliteDB, RemoteServer.RemoteServerMap) != nil {
 		fmt.Println("Error while loading servers")
-		return nil,true
+		return true
 	}
 	
-	if loadPaths(sqliteDB, localMap) != nil {
+	if loadPaths(sqliteDB, RemoteServer.RemoteServerMap) != nil {
 		fmt.Println("Error while loading paths")
-		return nil,true
+		return true
 	}
 
-	if loadIpConstraint(sqliteDB, localMap) != nil {
+	if loadIpConstraint(sqliteDB, RemoteServer.RemoteServerMap) != nil {
 		fmt.Println("Error while loading IP constraints")
-		return nil,true
+		return true
+	}
+	fmt.Println("Remote Server Map : ", RemoteServer.RemoteServerMap)
+	return false
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func HandleDBRequests(dbpath string, serverIP string, serverPort string, paths []string, clients []string) (int,error){
+	dbCon, err := sql.Open("sqlite3", dbpath)
+	// dbCon, err := sql.Open("sqlite3", dbpath + ":databaselocked.sqlite?cache=shared&mode=rwc")
+	var id int
+	defer dbCon.Close()
+
+	pathArgs := make([]interface{}, 0)
+	clientArgs := make([]interface{}, 0)
+	if err != nil {
+		return id, err
 	}
 
-	return localMap, false
+	txn, err := dbCon.Begin()
+	if err != nil {
+		return id, err
+	}
+
+	id, err = insertServer(txn, serverIP, serverPort)
+	if err != nil {
+		return id, err
+	}
+
+	for _,path := range(paths){
+		pathArgs = append(pathArgs, path, fmt.Sprint(id))
+	}
+	if err := insertPath(txn, id, pathArgs...); err != nil{
+		return id, err
+	}
+
+	for _,client := range(clients){
+		clientArgs = append(clientArgs, client, fmt.Sprint(id))
+	}
+	if err := insertClient(txn, id, clientArgs...); err != nil{
+		return id, err
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		return id, err
+	}
+
+	return id, nil
+
 }
 
 /*-----------------------------------------------------------------------------------------*/
@@ -158,8 +222,15 @@ func createTable(dbCon *sql.DB, tableName string)  error{
 			FOREIGN KEY(serverid) REFERENCES servers(pkid)
 		);`
 	}
-	
-	return QxecuteQuery(dbCon, fmt.Sprintf(query, tableName))
+	txn, err := dbCon.Begin()
+	if err != nil {
+		return err
+	}
+	err = QxecuteQuery(txn, fmt.Sprintf(query, tableName))
+	if err != nil {
+		return err
+	}
+	return txn.Commit()
 }
 
 /*-----------------------------------------------------------------------------------------*/
@@ -189,7 +260,7 @@ func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func QxecuteQuery(dbCon *sql.DB, sql string, args ...interface{}) error {
+func QxecuteQuery(dbCon *sql.Tx, sql string, args ...interface{}) error {
 
 	fmt.Println(" Args in exec query: ", args)
 	statement, err := dbCon.Prepare(sql) 
@@ -207,36 +278,74 @@ func QxecuteQuery(dbCon *sql.DB, sql string, args ...interface{}) error {
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func insertServer(dbCon *sql.DB , ip string, port string) error {
+func insertServer(dbCon *sql.Tx , ip string, port string) (int,error) {
 
+	var pkid int
 	fmt.Println("Inside insert func")
-	insertSQL := `INSERT INTO servers(ipaddress, port) VALUES (?, ?)`
-	err := QxecuteQuery(dbCon, insertSQL, ip, port)
-	return err
+	insertSQL := `INSERT INTO servers(ipaddress, port) VALUES (?, ?) RETURNING pkid`
+
+	statement, err := dbCon.Prepare(insertSQL) 
+	if err != nil {
+		fmt.Println("error ", err.Error())
+		return pkid,err
+	}
+	err = statement.QueryRow(ip, port).Scan(&pkid)
+	if err != nil {
+
+		statement, err = dbCon.Prepare("SELECT pkid FROM servers WHERE ipaddress = ? AND port = ?")
+		rows, err := statement.Query(ip, port)
+		
+		if err != nil {
+			return pkid,err
+		}
+		for rows.Next() { 
+			rows.Scan(&pkid)
+			log.Println(" Server already exists id: ", pkid)
+
+		}
+		rows.Close() 
+		return pkid, nil
+	}
+	log.Println("Inser Query executed successfully created")
+	fmt.Println("Inside insert func id  : ", pkid)
+
+	return pkid,nil
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func insertPath(dbCon *sql.DB, path string, hostID int) error {
+func insertPath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
-	insertSQL := `INSERT INTO pathmappings(path, serverid) VALUES (?, ?)`
-	err := QxecuteQuery(dbCon, insertSQL, path, fmt.Sprint(hostID))
+	insertSQL := `INSERT INTO pathmappings(path, serverid) VALUES`
+	entries := len(args)/2
+	for i := 0; i < entries; i++ {
+		insertSQL += " (?, ?),"
+	}
+	err := QxecuteQuery(dbCon, insertSQL[:len(insertSQL)-1], args...)
 	updateServer := `UPDATE servers SET pathconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
+	fmt.Println("Insert path error: ", err)
 	return err
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func insertClient(dbCon *sql.DB, clientIp string, hostID int) error {
+func insertClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
-	insertSQL := `INSERT INTO addressmappings(ipaddress, serverid) VALUES (?, ?)`
-	err := QxecuteQuery(dbCon, insertSQL, clientIp, fmt.Sprint(hostID))
+	insertSQL := `INSERT INTO addressmappings(ipaddress, serverid) VALUES`
+	entries := len(args)/2
+	for i := 0; i < entries; i++ {
+		insertSQL += " (?, ?),"
+	}
+	err := QxecuteQuery(dbCon, insertSQL[:len(insertSQL)-1], args...)
 	updateServer := `UPDATE servers SET ipconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
+	fmt.Println("Insert client error: ", err)
 	return err
 }
 
 /*-----------------------------------------------------------------------------------------*/
 func showTable(dbCon *sql.DB) error{
+
+	fmt.Println("*************** SERVER TABLE ****************************")
 	showServer := `
 		SELECT pkid, ipaddress, port from servers;
 		`
@@ -245,7 +354,6 @@ func showTable(dbCon *sql.DB) error{
 		fmt.Println("Error ", err.Error())
 		return err
 	}
-	defer rows.Close() 
 	for rows.Next() {
 		var pkid int
 		var ipaddress string
@@ -253,6 +361,49 @@ func showTable(dbCon *sql.DB) error{
 		rows.Scan(&pkid, &ipaddress, &port)
 		fmt.Println("Server ", pkid, " ", ipaddress, " ", port)
 	}
+	rows.Close() 
+
+	fmt.Println("*************** PATH TABLE ****************************")
+
+	showPath := `
+		SELECT pkid, path, serverid from pathmappings;
+		`
+	rows2, err := dbCon.Query(showPath)	
+	if err != nil {
+		fmt.Println("Error ", err.Error())
+		return err
+	}
+
+	for rows2.Next() {
+		var pkid int
+		var path string
+		var serverid int
+		rows2.Scan(&pkid, &path, &serverid)
+		fmt.Println("Pathid ", pkid, " path ", path, " serverID ", serverid)
+	}
+	rows2.Close() 
+
+	fmt.Println("*************** Client TABLE ****************************")
+
+	showClient := `
+		SELECT pkid, ipaddress, serverid from addressmappings;
+		`
+	rows3, err := dbCon.Query(showClient)
+	if err != nil {
+		fmt.Println("Error ", err.Error())
+		return err
+	}
+	for rows3.Next() {
+		var pkid int
+		var client string
+		var serverid int
+		rows3.Scan(&pkid, &client, &serverid)
+		fmt.Println("ClientID ", pkid, " ClientIP ", client, " serverID ", serverid)
+	}
+	rows3.Close() 
+
+
+
 	return nil
 }
 

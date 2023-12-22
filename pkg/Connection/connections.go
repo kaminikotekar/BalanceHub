@@ -12,14 +12,16 @@ type Connections struct {
 	activeConnections map[int]int
 }
 
-func InitConnection(serverIds []int) *Connections {
+var ConnectionMap *Connections
+
+func InitConnection(serverIds []int) {
 	connect := Connections{
 		activeConnections: make(map[int]int),
 	}
 	for _, sid := range serverIds {
 		connect.activeConnections[sid] = 0
 	}
-	return &connect
+	ConnectionMap = &connect
 }
 
 func (c *Connections) AddConnection(serverId int) {

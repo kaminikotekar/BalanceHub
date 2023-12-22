@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+var RemoteServerMap *Map
+
 type Server struct {
 	Ipaddress string
 	Port string
@@ -21,12 +23,13 @@ type Map struct {
 
 }
 
-func GenerateMap() *Map {
+func GenerateMap() {
 	var localMap Map
 	localMap.serverMap = make(map[int]*Server)
 	localMap.pathMap = make(map[string]map[int]*Server)
 	localMap.ipMap = make(map[string]map[int]*Server)
-	return &localMap
+	RemoteServerMap = &localMap
+	// return &localMap
 }
 
 func (m* Map) AddServer(serverId int, ipaddress string, port string, pathConst bool, ipConst bool) {

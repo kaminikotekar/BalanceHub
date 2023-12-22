@@ -20,14 +20,15 @@ import (
 )
 
 type Packet struct {
+	Remote net.Addr
 	PacType string
 	Data []byte
 }
 
 func main() {
 	log.Println("Starting HTTP server...")
-	lmap, error := Connection.LoadDB("RemoteServer.db")
-	fmt.Println(lmap)
+	error := Connection.LoadDB("RemoteServer.db")
+	// fmt.Println(lmap)
 	if error {
 		return
 	}
@@ -36,7 +37,7 @@ func main() {
 	fmt.Println("config2.yaml ", config,  "err ", err)
 	fmt.Println("LB server: ", config.GetLBServer())
 
-	connections := Connection.InitConnection(lmap.GetServerIds())
+	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
 	// loadBalancer := config.LoadBalancer
 	// remoteServers := config.OriginalServers
 	// connectionLoad := &Connection.Connections{
@@ -64,7 +65,7 @@ func main() {
 		}
 		fmt.Println("Received connection from ", conn)
 		// read data from connection
-		go handleConnection(conn, connections, lmap)
+		go handleConnection(conn)
 	}
 }
 
@@ -242,12 +243,12 @@ func readBytes(c chan *Packet, reader *bufio.Reader){
 	}
 }
 
-func (packet *Packet) handlePacket(connectionLoad *Connection.Connections, lmap *RemoteServer.Map) ([]byte, error) {
+func (packet *Packet) handlePacket() ([]byte, error) {
 
 	fmt.Println("buffer received : ", packet.Data)
 	if packet.PacType == "LB" {
 		fmt.Println("Handle LB request")
-		res := decodeLBPacket(packet.Data)
+		res := decodeLBPacket(packet.Remote, packet.Data)
 		fmt.Println("sending res " ,res)
 		return res, nil
 	}
@@ -273,12 +274,12 @@ func (packet *Packet) handlePacket(connectionLoad *Connection.Connections, lmap 
 	fmt.Println("url: ", url)
 	fmt.Println("RemoteAddr: ", req.RemoteAddr)
 
-	allowedServers := lmap.GetPossibleServers("127.0.0.1", url)
+	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers("127.0.0.1", url)
 
 	fmt.Println("allowedServers: ", allowedServers)
 
 	fmt.Println("printing optimal server: ......")
-	remoteServerId := connectionLoad.GetOptimalServer(allowedServers)
+	remoteServerId := Connection.ConnectionMap.GetOptimalServer(allowedServers)
 
 	if remoteServerId == 0 {
 		resBytes , err := getHttpRequestInBytes("401 Unauthorized", 
@@ -294,11 +295,11 @@ func (packet *Packet) handlePacket(connectionLoad *Connection.Connections, lmap 
 	}
 
 	fmt.Printf("server returned: %v\n", remoteServerId)
-	remoteServer := lmap.GetServerFromId(remoteServerId)
+	remoteServer := RemoteServer.RemoteServerMap.GetServerFromId(remoteServerId)
 	fmt.Println("Optimal Server: ", remoteServer)
 
-	connectionLoad.AddConnection(remoteServerId)
-	defer connectionLoad.RemoveConnection(remoteServerId)
+	Connection.ConnectionMap.AddConnection(remoteServerId)
+	defer Connection.ConnectionMap.RemoveConnection(remoteServerId)
 
 	dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
 	if err != nil {
@@ -308,16 +309,18 @@ func (packet *Packet) handlePacket(connectionLoad *Connection.Connections, lmap 
 	return dataToBereturned, nil
 }
 
-func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lmap *RemoteServer.Map) {
+func handleConnection(conn net.Conn) {
 	
 	defer conn.Close()
-	connectionLoad.PrintConnections()
+	Connection.ConnectionMap.PrintConnections()
 	conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
 
 	// Create an request reader
    	reader := bufio.NewReader(conn)
 
 	c := make(chan *Packet)
+	client := conn.RemoteAddr()
+	fmt.Println("client addr " ,client)
 	go readBytes(c, reader)
 
 	for {
@@ -325,7 +328,8 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 		if !ok {
 			break
 		}
-		rdata, err := packet.handlePacket(connectionLoad, lmap)
+		packet.Remote = client
+		rdata, err := packet.handlePacket()
 		if err != nil {
 			break
 		}
@@ -333,7 +337,7 @@ func handleConnection(conn net.Conn, connectionLoad *Connection.Connections, lma
 	}
 }
 
-func decodeLBPacket(buffer []byte) []byte{
+func decodeLBPacket(remote net.Addr, buffer []byte) []byte{
 	
 	// action := buffer[2]
 	remainingLength := buffer[3]
@@ -351,6 +355,9 @@ func decodeLBPacket(buffer []byte) []byte{
 
 	fmt.Println("decoded packet: ", decodedPacket)
 	fmt.Println("error : ", err)
+	
+	remoteIP, remotePort, err := net.SplitHostPort(remote.String())
+	decodedPacket.HandleRemoteRequest(remoteIP, remotePort)
 
 	// Create res packet
 	rawBytes := []byte("RE")
