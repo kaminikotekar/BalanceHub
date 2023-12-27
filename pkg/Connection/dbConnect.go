@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"log"
+	"strings"
 	"io/ioutil"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 	_"github.com/mattn/go-sqlite3" 
@@ -119,51 +120,87 @@ func LoadDB(dbpath string) (bool){
 	fmt.Println("Remote Server Map : ", RemoteServer.RemoteServerMap)
 	return false
 }
-
 /*-----------------------------------------------------------------------------------------*/
-func HandleDBRequests(dbpath string, serverIP string, serverPort string, paths []string, clients []string) (int,error){
+func HandleDBRequests(dbpath string, action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
 	dbCon, err := sql.Open("sqlite3", dbpath)
-	// dbCon, err := sql.Open("sqlite3", dbpath + ":databaselocked.sqlite?cache=shared&mode=rwc")
-	var id int
+	var pkid int
+	if err != nil {
+		return pkid, err
+	}
 	defer dbCon.Close()
 
-	pathArgs := make([]interface{}, 0)
-	clientArgs := make([]interface{}, 0)
-	if err != nil {
-		return id, err
-	}
 
 	txn, err := dbCon.Begin()
 	if err != nil {
-		return id, err
+		return pkid, err
 	}
 
-	id, err = insertServer(txn, serverIP, serverPort)
+	if action == true {
+		pkid, err := insertServer(txn, serverIP, serverPort)
+		if err != nil {
+			return pkid, err
+		}
+		return HandleInsertRequests(txn, pkid, getInterfaceArray(paths, pkid), getInterfaceArray(clients, pkid))
+	} else {
+		pkid, err := getServerID(txn, serverIP, serverPort)
+		if err != nil {	
+			return pkid, err
+		}
+		return HandleDeleteRequests(txn, pkid, getInterfaceArray(paths, 0), getInterfaceArray(clients, 0))
+	}
+
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func HandleInsertRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []interface{}) (int,error){
+
+	if err := insertPath(txn, pkid, paths...); err != nil{
+		return pkid, err
+	}
+
+	if err := insertClient(txn, pkid, clients...); err != nil{
+		return pkid, err
+	}
+
+	err := txn.Commit()
 	if err != nil {
-		return id, err
+		return pkid, err
 	}
 
-	for _,path := range(paths){
-		pathArgs = append(pathArgs, path, fmt.Sprint(id))
-	}
-	if err := insertPath(txn, id, pathArgs...); err != nil{
-		return id, err
+	return pkid, nil
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func HandleDeleteRequests(txn *sql.Tx, pkid int,  paths []interface{}, clients []interface{}) (int,error){
+
+	if err := deletePath(txn, pkid, paths...); err != nil{
+		return pkid, err
 	}
 
-	for _,client := range(clients){
-		clientArgs = append(clientArgs, client, fmt.Sprint(id))
-	}
-	if err := insertClient(txn, id, clientArgs...); err != nil{
-		return id, err
+	if err := deleteClient(txn, pkid, clients...); err != nil{
+		return pkid, err
 	}
 
-	err = txn.Commit()
+	err := txn.Commit()
 	if err != nil {
-		return id, err
+		return pkid, err
 	}
 
-	return id, nil
+	return pkid, nil
+}
 
+/*-----------------------------------------------------------------------------------------*/
+func getInterfaceArray(list []string, val int) []interface{} {
+	inter := make([]interface{}, 0)
+
+	for _, i := range list {
+		if val == 0 {
+			inter = append(inter, i)
+		} else {
+			inter = append(inter, i, val)
+		}
+	}
+	return  inter
 }
 
 /*-----------------------------------------------------------------------------------------*/
@@ -253,7 +290,7 @@ func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
 		rows.Scan(&id, &ipaddress, &port, &pathConst, &ipConst)
 		log.Println("Row: ", id, " ", ipaddress, " ", port, " ", pathConst, " ", ipConst)
 		
-		m.AddServer(id, ipaddress, port, pathConst, ipConst)
+		m.AddServer(id, ipaddress, port)
 	}
 	fmt.Println("Servers: ", m)
 	return nil
@@ -315,12 +352,12 @@ func insertServer(dbCon *sql.Tx , ip string, port string) (int,error) {
 /*-----------------------------------------------------------------------------------------*/
 func insertPath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
-	insertSQL := `INSERT INTO pathmappings(path, serverid) VALUES`
-	entries := len(args)/2
-	for i := 0; i < entries; i++ {
-		insertSQL += " (?, ?),"
+	placeholder := make([]string, len(args)/2)
+	for i := range placeholder {
+		placeholder[i] = "(?, ?)"
 	}
-	err := QxecuteQuery(dbCon, insertSQL[:len(insertSQL)-1], args...)
+	insertSQL := "INSERT OR IGNORE INTO pathmappings(path, serverid) VALUES " + strings.Join(placeholder, ",")
+	err := QxecuteQuery(dbCon, insertSQL, args...)
 	updateServer := `UPDATE servers SET pathconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
 	fmt.Println("Insert path error: ", err)
@@ -330,15 +367,74 @@ func insertPath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 /*-----------------------------------------------------------------------------------------*/
 func insertClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
-	insertSQL := `INSERT INTO addressmappings(ipaddress, serverid) VALUES`
-	entries := len(args)/2
-	for i := 0; i < entries; i++ {
-		insertSQL += " (?, ?),"
+	placeholder := make([]string, len(args)/2)
+	for i := range placeholder {
+		placeholder[i] = "(?, ?)"
 	}
-	err := QxecuteQuery(dbCon, insertSQL[:len(insertSQL)-1], args...)
+
+	insertSQL := "INSERT INTO addressmappings(ipaddress, serverid) VALUES " + strings.Join(placeholder,",")
+	err := QxecuteQuery(dbCon, insertSQL, args...)
 	updateServer := `UPDATE servers SET ipconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
 	fmt.Println("Insert client error: ", err)
+	return err
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func getServerID(dbCon *sql.Tx, hostIP string, hostPort string) (int, error) {
+	var pkid int
+	sql := "SELECT pkid FROM servers where ipaddress = ? and port = ?;"
+	rows, err := dbCon.Query(sql, hostIP, hostPort) 
+	if err != nil {
+		fmt.Println("Error ", err.Error())
+		return pkid, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		rows.Scan(&pkid)
+	}
+	
+	return pkid, nil
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func deletePath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
+	placeholder := make([]string, len(args))
+	for i := range placeholder {
+		placeholder[i] = "?"
+	}
+	deleteSQL := "DELETE FROM pathmappings WHERE path in (" + strings.Join(placeholder, ",")+ ") AND serverid = ?;"
+	err := QxecuteQuery(dbCon, deleteSQL, append(args, hostID)...)
+	if err != nil {
+		fmt.Println("Error deleting path : ", err)
+		return err
+	}
+
+	updateServer := `UPDATE servers SET pathconstraint = 'FALSE' WHERE NOT EXISTS (SELECT * FROM  pathmappings WHERE serverid = ?); `
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))	
+	fmt.Println("Error updating server : ", err)
+
+	return err
+}
+
+/*-----------------------------------------------------------------------------------------*/
+func deleteClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
+	
+	placeholder := make([]string, len(args))
+	for i := range placeholder {
+		placeholder[i] = "?"
+	}
+	deleteSQL := "DELETE FROM addressmappings WHERE ipaddress in (" + strings.Join(placeholder, ",")+ ") AND serverid = ?;"
+	err := QxecuteQuery(dbCon, deleteSQL, append(args, hostID)...)
+	if err != nil {
+		fmt.Println("Error deleting client : ", err)
+		return err
+	}
+
+	updateServer := `UPDATE servers SET ipconstraint = 'FALSE' WHERE NOT EXISTS (SELECT * FROM  addressmappings WHERE serverid = ?); `
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))	
+	fmt.Println("Error updating server : ", err)
+
 	return err
 }
 
@@ -347,7 +443,7 @@ func showTable(dbCon *sql.DB) error{
 
 	fmt.Println("*************** SERVER TABLE ****************************")
 	showServer := `
-		SELECT pkid, ipaddress, port from servers;
+		SELECT pkid, ipaddress, port, pathconstraint, ipconstraint from servers;
 		`
 	rows, err := dbCon.Query(showServer)
 	if err != nil {
@@ -358,8 +454,10 @@ func showTable(dbCon *sql.DB) error{
 		var pkid int
 		var ipaddress string
 		var port string
-		rows.Scan(&pkid, &ipaddress, &port)
-		fmt.Println("Server ", pkid, " ", ipaddress, " ", port)
+		var pathconstraint string
+		var ipconstraint string
+		rows.Scan(&pkid, &ipaddress, &port, &pathconstraint, &ipconstraint)
+		fmt.Println("Server ", pkid, " ", ipaddress, " ", port, " ", pathconstraint, " ", ipconstraint)
 	}
 	rows.Close() 
 

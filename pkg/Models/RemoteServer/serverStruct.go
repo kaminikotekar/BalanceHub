@@ -9,8 +9,8 @@ var RemoteServerMap *Map
 type Server struct {
 	Ipaddress string
 	Port string
-	PathConsrt bool
-	IpConsrt bool
+	PathConsrt int
+	IpConsrt int
 	// AllowedIPs []string
 	// Paths []string
 }
@@ -32,12 +32,13 @@ func GenerateMap() {
 	// return &localMap
 }
 
-func (m* Map) AddServer(serverId int, ipaddress string, port string, pathConst bool, ipConst bool) {
-	m.serverMap[serverId] = &Server{
-		Ipaddress: ipaddress,
-		Port: port,
-		PathConsrt: pathConst,
-		IpConsrt: ipConst,
+func (m* Map) AddServer(serverId int, ipaddress string, port string) {
+	_, ok := m.serverMap[serverId]
+	if !ok {
+		m.serverMap[serverId] = &Server{
+			Ipaddress: ipaddress,
+			Port: port,
+		}
 	}
 }
 
@@ -56,6 +57,24 @@ func (m *Map) hasPath(path string) bool {
 	return true
 }
 
+func (m *Map) DeletePath(path string, serverId int){
+	_, ok := m.pathMap[path][serverId]
+	if !ok {
+		return 
+	}
+	m.serverMap[serverId].PathConsrt -= 1
+	delete(m.pathMap[path], serverId)
+}
+
+func (m *Map) DeleteClient(clientIp string, serverId int){
+	_, ok := m.ipMap[clientIp][serverId]
+	if !ok {
+		return 
+	}
+	m.serverMap[serverId].IpConsrt -= 1
+	delete(m.ipMap[clientIp], serverId)
+}
+
 func(m *Map) UpdatePath(path string, serverid int) {
 
 	// p.pathmap[path] = append(p.pathmap[path],server)
@@ -66,6 +85,10 @@ func(m *Map) UpdatePath(path string, serverid int) {
 
 	if !ok{
 		m.pathMap[path] = make(map[int]*Server)
+	}
+	_, ok = m.pathMap[path][serverid]
+	if !ok{
+		server.PathConsrt+= 1
 	}
 
 	m.pathMap[path][serverid] = server
@@ -93,6 +116,10 @@ func (m *Map) UpdateClientIP(clientIp string, serverid int) {
 		m.ipMap[clientIp] = make(map[int]*Server)
 	}
 
+	_, ok = m.ipMap[clientIp][serverid]
+	if !ok{
+		server.IpConsrt+= 1
+	}
 	m.ipMap[clientIp][serverid] = server
 }
 
@@ -102,13 +129,13 @@ func (m *Map) GetPossibleServers(clientIp string, path string) ([]int) {
 	for k, server := range m.serverMap {
 		_, res1 := m.pathMap[path][k]
 		_, res2 := m.ipMap[clientIp][k]
-		if server.PathConsrt == false && server.IpConsrt == false {
+		if server.PathConsrt == 0 && server.IpConsrt == 0 {
 			servers = append(servers, k)
-		} else if server.IpConsrt == false {
+		} else if server.IpConsrt == 0 {
 			if res1 {
 				servers = append(servers, k)
 			}
-		} else if server.PathConsrt == false {
+		} else if server.PathConsrt == 0 {
 			if res2 {
 				servers = append(servers, k)
 			}

@@ -106,31 +106,48 @@ func (l LBRequestLayer) Deserialize() (*LBPacket, error) {
 
 }
 
+func DecodeToPacket (buffer []byte) (*LBPacket, error) {
+    remainingLength := buffer[3]
+    packetLength := remainingLength + 4
+
+    packet := gopacket.NewPacket(buffer[:packetLength], 
+		                            LBLayerType,
+		                            gopacket.Default)
+
+    customLayer := packet.Layer(LBLayerType)
+    customLayerContent, _ := customLayer.(*LBRequestLayer)
+    decodedPacket, err := customLayerContent.Deserialize()
+
+    return decodedPacket, err
+}
+
 func (p *LBPacket) HandleRemoteRequest(remoteIP string, remotePort string) error{
     // TODO: change client addr from string to list
 
-    RemoteID, err := Connection.HandleDBRequests("RemoteServer.db", remoteIP, remotePort, p.Payload.Paths, []string{p.Payload.Address})
+    RemoteID, err := Connection.HandleDBRequests("RemoteServer.db", p.Action, remoteIP, remotePort, p.Payload.Paths, []string{p.Payload.Address})
     if err != nil {
         fmt.Println("error while handling remote request in Db ", err)
         return err
     }
-    pathConst, ipConst := false, false
-    if len(p.Payload.Paths) > 0{
-        pathConst = true
-    }
-    if p.Payload.Address != "" {
-        ipConst = true
-    }
-    RemoteServer.RemoteServerMap.AddServer(RemoteID, remoteIP, remotePort, pathConst, ipConst)
 
-    // Update path
-    for _, path := range p.Payload.Paths {
-        fmt.Println("Insert path ", path)
-        RemoteServer.RemoteServerMap.UpdatePath(path, RemoteID)
-    }
+    if p.Action == true {
+        RemoteServer.RemoteServerMap.AddServer(RemoteID, remoteIP, remotePort)
 
-    // Update Client
-    RemoteServer.RemoteServerMap.UpdateClientIP(p.Payload.Address, RemoteID)
+        // Update path
+        for _, path := range p.Payload.Paths {
+            RemoteServer.RemoteServerMap.UpdatePath(path, RemoteID)
+        }
+        // Update Client
+        RemoteServer.RemoteServerMap.UpdateClientIP(p.Payload.Address, RemoteID)
+    }else {
+
+        for _, path := range p.Payload.Paths {
+            RemoteServer.RemoteServerMap.DeletePath(path, RemoteID)
+        }
+        // Update Client
+        RemoteServer.RemoteServerMap.DeleteClient(p.Payload.Address, RemoteID)
+
+    }
 
     return nil
 }

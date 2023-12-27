@@ -12,7 +12,6 @@ import (
 		"net/url"
 		"bytes"
 		"strings"
-		"github.com/google/gopacket"
 		"github.com/kaminikotekar/BalanceHub/pkg/Config"
 		"github.com/kaminikotekar/BalanceHub/pkg/Connection"
 		"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
@@ -338,55 +337,23 @@ func handleConnection(conn net.Conn) {
 }
 
 func decodeLBPacket(remote net.Addr, buffer []byte) []byte{
-	
-	// action := buffer[2]
-	remainingLength := buffer[3]
-	// payload := buffer[4: remainingLength]
 
-	packet := gopacket.NewPacket(buffer[:4+remainingLength], 
-		LBProtocol.LBLayerType,
-		gopacket.Default)
-
-	fmt.Println("packet: ")
-
-	customLayer := packet.Layer(LBProtocol.LBLayerType)
-	customLayerContent, _ := customLayer.(*LBProtocol.LBRequestLayer)
-	decodedPacket, err := customLayerContent.Deserialize()
-
-	fmt.Println("decoded packet: ", decodedPacket)
-	fmt.Println("error : ", err)
-	
-	remoteIP, remotePort, err := net.SplitHostPort(remote.String())
-	decodedPacket.HandleRemoteRequest(remoteIP, remotePort)
-
-	// Create res packet
-	rawBytes := []byte("RE")
-	var message []byte
+	decodedPacket, err := LBProtocol.DecodeToPacket(buffer)
+	fmt.Println("decoded packet: ", decodedPacket)	
 	if err != nil {
+		fmt.Println("error : ", err)
+		return LBProtocol.GenerateResponse(true, "Packet error: Unable to decode packet")
 
-		rawBytes = append(rawBytes, 0xFF)
-		message = []byte("Could not decode packet")
-		// fmt.Println("remaining length byte: ", byte(len(pydata)) )
-
-	} else{
-		rawBytes = append(rawBytes, 0x00)
-		message = []byte("Success")
 	}
 
-	rawBytes = append(rawBytes, byte(len(message)))
-	pData := append(rawBytes, message...)
-	res := gopacket.NewPacket(
-		pData,
-		LBProtocol.ErrLayerType,
-		gopacket.Default,
-	)
-	
-	buf := gopacket.NewSerializeBuffer()
-	opts := gopacket.SerializeOptions{}
+	remoteIP, remotePort, err := net.SplitHostPort(remote.String())
+	err = decodedPacket.HandleRemoteRequest(remoteIP, remotePort)
 
-	err = gopacket.SerializePacket(buf, opts, res)
-
-	return buf.Bytes()
+	if err != nil {
+		return LBProtocol.GenerateResponse(true, err.Error())
+	} else {
+		return LBProtocol.GenerateResponse(true, "Successful")
+	}
 }
 
 
