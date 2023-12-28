@@ -19,8 +19,9 @@ var LBLayerType = gopacket.RegisterLayerType(
 )
 
 type Mappings struct {
+    Port string
 	Paths []string
-	Address string
+	Clients []string
 }
 
 type LBPacket struct {
@@ -122,9 +123,12 @@ func DecodeToPacket (buffer []byte) (*LBPacket, error) {
 }
 
 func (p *LBPacket) HandleRemoteRequest(remoteIP string, remotePort string) error{
-    // TODO: change client addr from string to list
 
-    RemoteID, err := Connection.HandleDBRequests("RemoteServer.db", p.Action, remoteIP, remotePort, p.Payload.Paths, []string{p.Payload.Address})
+    if p.Payload.Port != "" {
+        remotePort = p.Payload.Port
+    }
+
+    RemoteID, err := Connection.HandleDBRequests("RemoteServer.db", p.Action, remoteIP, remotePort, p.Payload.Paths, p.Payload.Clients)
     if err != nil {
         fmt.Println("error while handling remote request in Db ", err)
         return err
@@ -138,15 +142,20 @@ func (p *LBPacket) HandleRemoteRequest(remoteIP string, remotePort string) error
             RemoteServer.RemoteServerMap.UpdatePath(path, RemoteID)
         }
         // Update Client
-        RemoteServer.RemoteServerMap.UpdateClientIP(p.Payload.Address, RemoteID)
-    }else {
-
+        for _, client := range p.Payload.Clients {
+            RemoteServer.RemoteServerMap.UpdateClientIP(client, RemoteID)
+        }
+    } else {
+        if len(p.Payload.Paths)== 0 && len(p.Payload.Clients) == 0 {
+            RemoteServer.RemoteServerMap.RemoveServer(RemoteID)
+        }
         for _, path := range p.Payload.Paths {
             RemoteServer.RemoteServerMap.DeletePath(path, RemoteID)
         }
         // Update Client
-        RemoteServer.RemoteServerMap.DeleteClient(p.Payload.Address, RemoteID)
-
+        for _, client := range p.Payload.Clients {
+            RemoteServer.RemoteServerMap.DeleteClient(client, RemoteID)
+        }
     }
 
     return nil
@@ -171,7 +180,7 @@ func Test(){
 
 	payloadData := Mappings{
 		Paths: []string{"/getList", "/PostList"},
-		Address: "SomeAddress",
+		Clients: []string{"SomeAddress"},
 	}
 	pydata ,_ := json.Marshal(payloadData)
 	pData := append(rawBytes, pydata...)

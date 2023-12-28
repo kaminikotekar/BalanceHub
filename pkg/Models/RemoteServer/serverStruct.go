@@ -42,6 +42,24 @@ func (m* Map) AddServer(serverId int, ipaddress string, port string) {
 	}
 }
 
+func (m * Map) RemoveServer(serverId int) {
+	delete(m.serverMap, serverId)
+	// Delete serverID from pathmap
+	for path, _ := range m.pathMap {
+		_, ok := m.pathMap[path][serverId]
+		if ok {
+			delete(m.pathMap[path], serverId)
+		}
+	}
+	// Delete serverID from clientMap
+	for client, _ := range m.ipMap {
+		_, ok := m.ipMap[client][serverId]
+		if ok {
+			delete(m.ipMap[client], serverId)
+		}
+	}
+}
+
 func (m* Map) GetServerFromId(id int) *Server {
 	return m.serverMap[id]
 }

@@ -14,7 +14,7 @@ CREATE TABLE pathmappings (
     "pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
     "path" text,
     "serverid" integer NOT NULL,
-    FOREIGN KEY(serverid) REFERENCES servers(pkid),
+    FOREIGN KEY(serverid) REFERENCES servers(pkid) ON DELETE CASCADE,
     UNIQUE(path, serverid)
 );
 
@@ -23,6 +23,6 @@ CREATE TABLE addressmappings(
     "pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
     "ipaddress" varchar(25),
     "serverid" integer NOT NULL,
-    FOREIGN KEY(serverid) REFERENCES servers(pkid),
-     UNIQUE(ipaddress, serverid)
+    FOREIGN KEY(serverid) REFERENCES servers(pkid) ON DELETE CASCADE,
+    UNIQUE(ipaddress, serverid)
 );

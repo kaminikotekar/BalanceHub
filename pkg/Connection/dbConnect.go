@@ -123,6 +123,7 @@ func LoadDB(dbpath string) (bool){
 /*-----------------------------------------------------------------------------------------*/
 func HandleDBRequests(dbpath string, action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
 	dbCon, err := sql.Open("sqlite3", dbpath)
+	_, err = dbCon.Exec("PRAGMA foreign_keys = ON;")
 	var pkid int
 	if err != nil {
 		return pkid, err
@@ -173,6 +174,11 @@ func HandleInsertRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []
 /*-----------------------------------------------------------------------------------------*/
 func HandleDeleteRequests(txn *sql.Tx, pkid int,  paths []interface{}, clients []interface{}) (int,error){
 
+	var err error
+	if len(paths) == 0 && len(clients) == 0 {
+		err = deleteServer(txn, pkid)
+	}
+
 	if err := deletePath(txn, pkid, paths...); err != nil{
 		return pkid, err
 	}
@@ -181,7 +187,7 @@ func HandleDeleteRequests(txn *sql.Tx, pkid int,  paths []interface{}, clients [
 		return pkid, err
 	}
 
-	err := txn.Commit()
+	err = txn.Commit()
 	if err != nil {
 		return pkid, err
 	}
@@ -352,6 +358,9 @@ func insertServer(dbCon *sql.Tx , ip string, port string) (int,error) {
 /*-----------------------------------------------------------------------------------------*/
 func insertPath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
+	if len(args) == 0 {
+		return nil
+	}
 	placeholder := make([]string, len(args)/2)
 	for i := range placeholder {
 		placeholder[i] = "(?, ?)"
@@ -367,12 +376,15 @@ func insertPath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 /*-----------------------------------------------------------------------------------------*/
 func insertClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 
+	if len(args) == 0 {
+		return nil
+	}
 	placeholder := make([]string, len(args)/2)
 	for i := range placeholder {
 		placeholder[i] = "(?, ?)"
 	}
 
-	insertSQL := "INSERT INTO addressmappings(ipaddress, serverid) VALUES " + strings.Join(placeholder,",")
+	insertSQL := "INSERT OR IGNORE INTO addressmappings(ipaddress, serverid) VALUES " + strings.Join(placeholder,",")
 	err := QxecuteQuery(dbCon, insertSQL, args...)
 	updateServer := `UPDATE servers SET ipconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
@@ -398,7 +410,21 @@ func getServerID(dbCon *sql.Tx, hostIP string, hostPort string) (int, error) {
 }
 
 /*-----------------------------------------------------------------------------------------*/
+func deleteServer(dbCon *sql.Tx, hostID int) error{
+	deleteSQL := "DELETE FROM servers WHERE pkid = ?"
+	err := QxecuteQuery(dbCon, deleteSQL, hostID)
+	if err != nil {
+		fmt.Println("Error deleting server : ", err)
+	}
+	return err
+}
+
+/*-----------------------------------------------------------------------------------------*/
 func deletePath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
+
+	if len(args) == 0 {
+		return nil
+	}
 	placeholder := make([]string, len(args))
 	for i := range placeholder {
 		placeholder[i] = "?"
@@ -420,6 +446,9 @@ func deletePath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 /*-----------------------------------------------------------------------------------------*/
 func deleteClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 	
+	if len(args) == 0 {
+		return nil
+	}
 	placeholder := make([]string, len(args))
 	for i := range placeholder {
 		placeholder[i] = "?"
