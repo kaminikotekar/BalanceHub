@@ -128,7 +128,7 @@ func (p *LBPacket) HandleRemoteRequest(remoteIP string, remotePort string) error
         remotePort = p.Payload.Port
     }
 
-    RemoteID, err := Connection.HandleDBRequests("RemoteServer.db", p.Action, remoteIP, remotePort, p.Payload.Paths, p.Payload.Clients)
+    RemoteID, err := Connection.HandleDBRequests(p.Action, remoteIP, remotePort, p.Payload.Paths, p.Payload.Clients)
     if err != nil {
         fmt.Println("error while handling remote request in Db ", err)
         return err

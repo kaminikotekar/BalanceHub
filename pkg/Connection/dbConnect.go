@@ -8,19 +8,16 @@ import (
 	"strings"
 	"io/ioutil"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
+	"github.com/kaminikotekar/BalanceHub/pkg/Config"
 	_"github.com/mattn/go-sqlite3" 
-)
+)	
 
-const(
-	SERVER_TABLE_NAME = "servers"
-	PATH_MAPPING_TABLE_NAME = "pathmappings"
-	ADDRESS_MAPPING_TABLE_NAME = "addressmappings"
-)
-
+var DB_FILE string
 /*-----------------------------------------------------------------------------------------*/
-func LoadDB(dbpath string) (bool){
+func LoadDB() (bool){
 
-	sqliteDB, err := sql.Open("sqlite3", dbpath)
+	DB_FILE = Config.Configuration.LoadBalancer.DBPath + DB_FILE_NAME
+	sqliteDB, err := sql.Open("sqlite3", DB_FILE)
 	defer sqliteDB.Close() 
 	if err != nil {
 		fmt.Println("Error ,", err)
@@ -28,10 +25,10 @@ func LoadDB(dbpath string) (bool){
 		return true
 	}
 
-	_, error := os.Stat(dbpath)
+	_, error := os.Stat(DB_FILE)
 	if os.IsNotExist(error) {
-		fmt.Printf("%v file does not exist\n", dbpath)
-		_, err := os.Create(dbpath)  //create a new file
+		fmt.Printf("%v file does not exist\n", DB_FILE)
+		_, err := os.Create(DB_FILE)  //create a new file
 		if err != nil {
 			fmt.Println("could not create database")
 			return true
@@ -121,8 +118,8 @@ func LoadDB(dbpath string) (bool){
 	return false
 }
 /*-----------------------------------------------------------------------------------------*/
-func HandleDBRequests(dbpath string, action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
-	dbCon, err := sql.Open("sqlite3", dbpath)
+func HandleDBRequests(action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
+	dbCon, err := sql.Open("sqlite3", DB_FILE)
 	_, err = dbCon.Exec("PRAGMA foreign_keys = ON;")
 	var pkid int
 	if err != nil {

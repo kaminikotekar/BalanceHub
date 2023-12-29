@@ -4,18 +4,18 @@ import (
 	"io"
 	"time"
 	"errors"
-		"log"
-		"bufio"
-        "fmt"
-        "net"
-		"net/http"
-		"net/url"
-		"bytes"
-		"strings"
-		"github.com/kaminikotekar/BalanceHub/pkg/Config"
-		"github.com/kaminikotekar/BalanceHub/pkg/Connection"
-		"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
-		"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
+	"log"
+	"bufio"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"bytes"
+	"strings"
+	"github.com/kaminikotekar/BalanceHub/pkg/Config"
+	"github.com/kaminikotekar/BalanceHub/pkg/Connection"
+	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
+	"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
 )
 
 type Packet struct {
@@ -26,15 +26,15 @@ type Packet struct {
 
 func main() {
 	log.Println("Starting HTTP server...")
-	error := Connection.LoadDB("RemoteServer.db")
+	err := Config.LoadConfiguration()
+	error := Connection.LoadDB()
 	// fmt.Println(lmap)
 	if error {
 		return
 	}
 
-	config, err := Config.GetConfiguration("config2.yaml")
-	fmt.Println("config2.yaml ", config,  "err ", err)
-	fmt.Println("LB server: ", config.GetLBServer())
+	fmt.Println("config2.yaml ", Config.Configuration,  "err ", err)
+	fmt.Println("LB server: ", Config.Configuration.GetLBServer())
 
 	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
 	// loadBalancer := config.LoadBalancer
@@ -48,14 +48,14 @@ func main() {
 	// fmt.Println("loaad: ", connectionLoad)
 	// fmt.Println("Server List ", remoteServers)
 
-	reverseProxy, err := net.Listen("tcp", config.GetLBServer())
+	reverseProxy, err := net.Listen("tcp", Config.Configuration.GetLBServer())
 	if err != nil {
 		log.Printf("Error listening: %s", err.Error())
 		os.Exit(1)
 	}
 	
 	defer reverseProxy.Close()
-	log.Printf("Listening on %s:%s \n",config.GetLBIP(), config.GetLBPort())
+	log.Printf("Listening on %s:%s \n",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort())
 	for {
 		conn, err := reverseProxy.Accept()
 		if err != nil {

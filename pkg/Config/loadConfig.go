@@ -5,10 +5,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const configFile = "config2.yaml"
+var Configuration *Config
 
 type ServerRestrictions struct {
 	AllowSubnet []string `yaml:"allow"`
-	DenySubnet []string `yaml:"deny"`
 }
 
 type LoadBalancer struct {
@@ -19,41 +20,43 @@ type LoadBalancer struct {
 	AccessLogsPath string `yaml:"access-logs-path"`
 	Caching bool `yaml:"caching"`
 	CacheDuration int `yaml:"cache-duration"`
+	DBPath string `yaml:"db-path"`
 }
 
 type Config struct {
 	OrigServer ServerRestrictions `yaml:"Original-Server"`
-	LoadBalancer LoadBalancer `yaml:"Server"`
+	LoadBalancer LoadBalancer `yaml:"BalanceHub"`
 
 }
 
-func GetConfiguration(filename string) (Config, error) {
+func LoadConfiguration() (error) {
 
-	var config Config
-	yamlFile, err := ioutil.ReadFile(filename)
+	var c Config
+	yamlFile, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		fmt.Printf("Error reading YAML file: %v", err)
-		return config, err
+		return err
 	}
-	err = yaml.Unmarshal(yamlFile, &config)
+	err = yaml.Unmarshal(yamlFile, &c)
 	if err != nil {
 		fmt.Println("Error unmarsh ", err)
-		return config, err
+		return err
 	}	
-	fmt.Println("Configuration ", config)
-	return config, nil
+	fmt.Println("Configuration ", Configuration)
+	Configuration = &c
+	return nil
 }
 
-func (config Config) GetLBServer() string {
-	return "localhost:" + config.LoadBalancer.Port
+func (c *Config) GetLBServer() string {
+	return "localhost:" + c.LoadBalancer.Port
 }
 
-func (config Config) GetLBIP() string {
+func (c *Config) GetLBIP() string {
 	return "localhost:"
 }
 
-func (config Config) GetLBPort() string {
-	return config.LoadBalancer.Port
+func (c *Config) GetLBPort() string {
+	return c.LoadBalancer.Port
 }
 
 
