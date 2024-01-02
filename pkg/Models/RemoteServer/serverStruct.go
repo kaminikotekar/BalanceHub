@@ -2,6 +2,8 @@ package RemoteServer
 
 import (
 	"fmt"
+	"strings"
+	"net"
 )
 
 var RemoteServerMap *Map
@@ -141,12 +143,46 @@ func (m *Map) UpdateClientIP(clientIp string, serverid int) {
 	m.ipMap[clientIp][serverid] = server
 }
 
+
+func ipInSubnet(ip, subnet string) bool{
+	ipAddr := net.ParseIP(ip)
+	_, subnetIPNet, err := net.ParseCIDR(subnet)
+	if err != nil {
+		fmt.Println("Error parsing subnet:", err)
+		return false
+	}
+
+	return subnetIPNet.Contains(ipAddr)
+}
+
+
 func (m *Map) GetPossibleServers(clientIp string, path string) ([]int) {
 	servers := make([]int, 0, len(m.serverMap))
+	subnetList := make([]string, 0, len(m.ipMap))
 
+	for key, _ := range m.ipMap {
+		if strings.Contains(key, "/") && ipInSubnet(clientIp, key) {
+			subnetList = append(subnetList, key)// works
+			// subnetKey = key
+		}else if key == clientIp {
+			subnetList = append(subnetList, key)
+			// subnetKey = key
+		}
+		
+	}
+	fmt.Println("SubnetList: ", subnetList)
 	for k, server := range m.serverMap {
 		_, res1 := m.pathMap[path][k]
-		_, res2 := m.ipMap[clientIp][k]
+		var res2 bool
+		for _, subnetKey := range subnetList {
+			_, res2 = m.ipMap[subnetKey][k]
+			fmt.Println("IPMap for subnetKey: ", m.ipMap[subnetKey])
+			fmt.Println("Subnet key : ", subnetKey, "result : ", res2)
+			if res2 {
+				break
+			}
+		}
+		// _, res2 := m.ipMap[subnetKey][k]
 		if server.PathConsrt == 0 && server.IpConsrt == 0 {
 			servers = append(servers, k)
 		} else if server.IpConsrt == 0 {
