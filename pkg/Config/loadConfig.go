@@ -12,14 +12,20 @@ type ServerRestrictions struct {
 	AllowSubnet []string `yaml:"allow"`
 }
 
-type LoadBalancer struct {
-	// Ipaddress string `yaml:"address"`
-	Port string `yaml:"listen"`
-	Algorithm string `yaml:"algorithm"`
-	AccessLogs string `yaml:"access-logs"`
-	AccessLogsPath string `yaml:"access-logs-path"`
+type RedisServer struct {
+	Ip string `yaml:"ip"`
+	Port string `yaml:"port"`
+	Dbindex int `yaml:"db"`
+	Password string `yaml:"password"`
 	Caching bool `yaml:"caching"`
 	CacheDuration int `yaml:"cache-duration"`
+}
+
+type LoadBalancer struct {
+	Port string `yaml:"listen"`
+	Algorithm string `yaml:"algorithm"`
+	RedisWorker RedisServer `yaml:"redis-server"`
+	AccessLogsPath string `yaml:"access-logs-path"`
 	DBPath string `yaml:"db-path"`
 }
 
@@ -59,32 +65,9 @@ func (c *Config) GetLBPort() string {
 	return c.LoadBalancer.Port
 }
 
+func (c *Config) GetRedisConfig() RedisServer {
+	return c.LoadBalancer.RedisWorker
+}
 
-
-
-// func main() {
-// 	yamlFile, err := ioutil.ReadFile("config.yaml")
-// 	if err != nil {
-// 		fmt.Printf("Error reading YAML file: %v", err)
-// 		}
-
-// 	var serverList ServerList
-// 	// var m map[string]string
-// 	err = yaml.Unmarshal(yamlFile, &serverList)
-
-// 	if err != nil {
-// 		fmt.Println("Error unmarsh ", err)
-// 	}
-
-// 	fmt.Println("Server List: ", serverList)
-
-// 	for _,server := range(serverList.OriginalServers){
-// 		fmt.Println("server: ", server)
-// 		fmt.Println("IP address: ", server.Ipaddress)
-// 		fmt.Println("Port: ", server.Port)
-// 		fmt.Printf("Type : %T", server)
-// 	}
-
-// }
 
 

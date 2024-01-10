@@ -16,6 +16,7 @@ import (
 	"github.com/kaminikotekar/BalanceHub/pkg/Connection"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 	"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
+	"github.com/kaminikotekar/BalanceHub/pkg/LBLog"
 )
 
 type Packet struct {
@@ -27,12 +28,15 @@ type Packet struct {
 func main() {
 	log.Println("Starting HTTP server...")
 	err := Config.LoadConfiguration()
+	LBLog.InitLogger()
+	go LBLog.ProcessLogs()
 	error := Connection.LoadDB()
 	// fmt.Println(lmap)
 	if error {
 		return
 	}
 
+	LBLog.Log(LBLog.INFO, "Testing logs")
 	fmt.Println("config2.yaml ", Config.Configuration,  "err ", err)
 	fmt.Println("LB server: ", Config.Configuration.GetLBServer())
 
@@ -55,7 +59,7 @@ func main() {
 	}
 	
 	defer reverseProxy.Close()
-	log.Printf("Listening on %s:%s \n",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort())
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort()))
 	for {
 		conn, err := reverseProxy.Accept()
 		if err != nil {
@@ -319,7 +323,7 @@ func handleConnection(conn net.Conn) {
 
 	c := make(chan *Packet)
 	client := conn.RemoteAddr()
-	fmt.Println("client addr " ,client)
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("client addr  %s", client))
 	go readBytes(c, reader)
 
 	for {

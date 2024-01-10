@@ -3,15 +3,18 @@ Original-Server:
         - 192.168.1.0/24
         - 192.168.2.0/24
 
-
 BalanceHub:
     listen: 5000
     algorithm: "Least-Connected"
-    access-logs: true
-    access-logs-path: /var/log
-    caching: true
-    cache-duration: 3000
+    access-logs-path: ./logs
     db-path: ''
+    redis-server: 
+        ip: 127.0.0.1
+        port: 6379
+        db: 0
+        password: ''
+        caching: true
+        cache-duration: 3000
 
         
 
