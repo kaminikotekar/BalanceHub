@@ -2,21 +2,22 @@ package LBLog
 
 import (
 	"encoding/json"
-	"time"
 	"log"
+	"time"
 )
+
 type Message struct {
-	Message string
+	Message   string
 	Timestamp string
-	Flag string
+	Flag      string
 }
 
-func (msg *Message) marshal() []byte{
+func (msg *Message) marshal() []byte {
 	encoded, _ := json.Marshal(msg)
 	return encoded
 }
 
-func unMarshal(rawMsg []byte) *Message{
+func unMarshal(rawMsg []byte) *Message {
 	var msg Message
 	json.Unmarshal(rawMsg, &msg)
 	return &msg
@@ -29,9 +30,9 @@ func Log(flag string, message string) {
 		return
 	}
 	msg := &Message{
-		Message : message,
-		Timestamp : time.Now().Format("2006-01-02 15:04:05"), 
-		Flag : flag,
+		Message:   message,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+		Flag:      flag,
 	}
 	if lbLogger.isRDLogger {
 		WriteRDMQ(ctx, client, msg.marshal())
@@ -39,4 +40,3 @@ func Log(flag string, message string) {
 	}
 	messageQueue <- msg
 }
-

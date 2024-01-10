@@ -1,11 +1,13 @@
 package Config
+
 import (
 	"fmt"
-	"io/ioutil"
 	"gopkg.in/yaml.v3"
+	"io/ioutil"
 )
 
 const configFile = "config2.yaml"
+
 var Configuration *Config
 
 type ServerRestrictions struct {
@@ -13,29 +15,28 @@ type ServerRestrictions struct {
 }
 
 type RedisServer struct {
-	Ip string `yaml:"ip"`
-	Port string `yaml:"port"`
-	Dbindex int `yaml:"db"`
-	Password string `yaml:"password"`
-	Caching bool `yaml:"caching"`
-	CacheDuration int `yaml:"cache-duration"`
+	Ip            string `yaml:"ip"`
+	Port          string `yaml:"port"`
+	Dbindex       int    `yaml:"db"`
+	Password      string `yaml:"password"`
+	Caching       bool   `yaml:"caching"`
+	CacheDuration int    `yaml:"cache-duration"`
 }
 
 type LoadBalancer struct {
-	Port string `yaml:"listen"`
-	Algorithm string `yaml:"algorithm"`
-	RedisWorker RedisServer `yaml:"redis-server"`
-	AccessLogsPath string `yaml:"access-logs-path"`
-	DBPath string `yaml:"db-path"`
+	Port           string      `yaml:"listen"`
+	Algorithm      string      `yaml:"algorithm"`
+	RedisWorker    RedisServer `yaml:"redis-server"`
+	AccessLogsPath string      `yaml:"access-logs-path"`
+	DBPath         string      `yaml:"db-path"`
 }
 
 type Config struct {
-	OrigServer ServerRestrictions `yaml:"Original-Server"`
-	LoadBalancer LoadBalancer `yaml:"BalanceHub"`
-
+	OrigServer   ServerRestrictions `yaml:"Original-Server"`
+	LoadBalancer LoadBalancer       `yaml:"BalanceHub"`
 }
 
-func LoadConfiguration() (error) {
+func LoadConfiguration() error {
 
 	var c Config
 	yamlFile, err := ioutil.ReadFile(configFile)
@@ -47,7 +48,7 @@ func LoadConfiguration() (error) {
 	if err != nil {
 		fmt.Println("Error unmarsh ", err)
 		return err
-	}	
+	}
 	fmt.Println("Configuration ", Configuration)
 	Configuration = &c
 	return nil
@@ -68,6 +69,3 @@ func (c *Config) GetLBPort() string {
 func (c *Config) GetRedisConfig() RedisServer {
 	return c.LoadBalancer.RedisWorker
 }
-
-
-

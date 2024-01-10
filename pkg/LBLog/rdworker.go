@@ -2,35 +2,35 @@ package LBLog
 
 import (
 	"context"
-	"os"
-	"log"
-	"github.com/redis/go-redis/v9"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
+	"github.com/redis/go-redis/v9"
+	"log"
+	"os"
 )
 
 const (
 	logFileName = "/BalanceHub.log"
-	WARNING = "WARNING"
-	INFO = "INFO"
-	ERROR = "ERROR"
+	WARNING     = "WARNING"
+	INFO        = "INFO"
+	ERROR       = "ERROR"
 )
 
 var (
-	Initialized = false
-	ctx context.Context
-	client *redis.Client
+	Initialized  = false
+	ctx          context.Context
+	client       *redis.Client
 	messageQueue chan *Message
-    WarningLog *log.Logger
-    InfoLog   *log.Logger
-    ErrorLog   *log.Logger
-	lbLogger *LBLogger
-	redisConfig Config.RedisServer
+	WarningLog   *log.Logger
+	InfoLog      *log.Logger
+	ErrorLog     *log.Logger
+	lbLogger     *LBLogger
+	redisConfig  Config.RedisServer
 )
 
-type LBLogger struct{
+type LBLogger struct {
 	isRDLogger bool
-	logFlag map[string]*log.Logger
-	logFile string
+	logFlag    map[string]*log.Logger
+	logFile    string
 }
 
 func InitLogger() {
@@ -39,19 +39,19 @@ func InitLogger() {
 	redisConfig = Config.Configuration.GetRedisConfig()
 	if redisConfig.Ip != "" && redisConfig.Port != "" {
 		isRDLogger = true
-	} 
+	}
 
-	file, err := os.OpenFile(Config.Configuration.LoadBalancer.AccessLogsPath + logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(Config.Configuration.LoadBalancer.AccessLogsPath+logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal("Error:  File Opening : ", err)
 	}
 
 	lbLogger = &LBLogger{
 		isRDLogger: isRDLogger,
-		logFlag: map[string]*log.Logger {
-			INFO : log.New(file, "INFO: ", log.Lshortfile),
-			WARNING : log.New(file, "WARNING: ", log.Lshortfile),
-			ERROR :  log.New(file, "ERROR: ", log.Lshortfile),
+		logFlag: map[string]*log.Logger{
+			INFO:    log.New(file, "INFO: ", log.Lshortfile),
+			WARNING: log.New(file, "WARNING: ", log.Lshortfile),
+			ERROR:   log.New(file, "ERROR: ", log.Lshortfile),
 		},
 		logFile: Config.Configuration.LoadBalancer.AccessLogsPath + logFileName,
 	}
@@ -59,7 +59,7 @@ func InitLogger() {
 	ctx = GetContext()
 	client = GetRDClient()
 	messageQueue = getChannel()
-	Initialized = true	
+	Initialized = true
 }
 
 func GetContext() context.Context {
@@ -69,7 +69,7 @@ func GetContext() context.Context {
 	return ctx
 }
 
-func getChannel() chan *Message{
+func getChannel() chan *Message {
 	if messageQueue == nil {
 		messageQueue = make(chan *Message)
 	}
@@ -77,12 +77,12 @@ func getChannel() chan *Message{
 }
 
 func GetRDClient() *redis.Client {
-	
+
 	if client == nil {
 		client = redis.NewClient(&redis.Options{
-			Addr:	  redisConfig.Ip + ":" + redisConfig.Port,
+			Addr:     redisConfig.Ip + ":" + redisConfig.Port,
 			Password: redisConfig.Password,
-			DB:		 redisConfig.Dbindex,
+			DB:       redisConfig.Dbindex,
 		})
 	}
 	return client
@@ -96,7 +96,7 @@ func ProcessLogs() {
 	if lbLogger.isRDLogger {
 		for {
 			result, err := client.LPop(ctx, "logs").Result()
-			if err == nil {         
+			if err == nil {
 				// fmt.Println("Result: ", result)
 				writeLog(unMarshal([]byte(result)))
 				continue
@@ -104,12 +104,12 @@ func ProcessLogs() {
 		}
 	} else {
 		for {
-			msg, ok := <- messageQueue
+			msg, ok := <-messageQueue
 			if !ok {
 				log.Fatal("Could not read from channel : ", msg)
 			}
 			writeLog(msg)
-		}	
+		}
 	}
 }
 
