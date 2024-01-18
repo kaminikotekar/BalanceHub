@@ -16,7 +16,9 @@ import (
 	"github.com/kaminikotekar/BalanceHub/pkg/Connection"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 	"github.com/kaminikotekar/BalanceHub/pkg/LBProtocol"
-	"github.com/kaminikotekar/BalanceHub/pkg/LBLog"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis/LBLog"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis/Cache"
 )
 
 type Packet struct {
@@ -28,6 +30,7 @@ type Packet struct {
 func main() {
 	log.Println("Starting HTTP server...")
 	err := Config.LoadConfiguration()
+	Redis.InitServer()
 	LBLog.InitLogger()
 	go LBLog.ProcessLogs()
 	error := Connection.LoadDB()
@@ -139,6 +142,11 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 
 	bytesToSend, err = writeResponseToBytes(response)
 	remoteServerConnect.Close()
+
+	// Cache response if GET request
+	if req.Method == "GET" {
+		Cache.CacheResponse(req, bytesToSend)
+	}
 	return  bytesToSend, nil
 }
 
@@ -246,11 +254,26 @@ func readBytes(c chan *Packet, reader *bufio.Reader){
 	}
 }
 
+func isAllowedRemote(remote net.Addr) bool {
+	allowedRemotes := Config.Configuration.OrigServer.AllowSubnet
+	remoteIP, _, _ := net.SplitHostPort(remote.String())
+	for _, subnet := range allowedRemotes {
+		if RemoteServer.IpInSubnet(remoteIP, subnet){
+			return true
+		}
+	}
+	return false
+}
+
 func (packet *Packet) handlePacket() ([]byte, error) {
 
 	fmt.Println("buffer received : ", packet.Data)
 	if packet.PacType == "LB" {
 		fmt.Println("Handle LB request")
+		if !isAllowedRemote(packet.Remote){
+			LBLog.Log(LBLog.WARNING, "LB packet requested unfulfilled as not allowed")
+			return nil, errors.New("Not Allowed")
+		}
 		res := decodeLBPacket(packet.Remote, packet.Data)
 		fmt.Println("sending res " ,res)
 		return res, nil
@@ -275,9 +298,9 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 	url := req.URL.Path
 
 	fmt.Println("url: ", url)
-	fmt.Println("RemoteAddr: ", req.RemoteAddr)
-
-	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers("127.0.0.1", url)
+	fmt.Println("RemoteAddr: ", packet.Remote)
+	remoteIP, _, err := net.SplitHostPort(packet.Remote.String())
+	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers(remoteIP, url)
 
 	fmt.Println("allowedServers: ", allowedServers)
 
@@ -296,6 +319,14 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 		}
 		return resBytes,nil
 	}
+
+	// Find if request is cached
+	res, err := Cache.GetFromCache(req)
+	if err == nil {
+		fmt.Println("Got response from cahce : ", res)
+		return res, nil
+	}
+	fmt.Println("Request does not contain in cache: ", err)
 
 	fmt.Printf("server returned: %v\n", remoteServerId)
 	remoteServer := RemoteServer.RemoteServerMap.GetServerFromId(remoteServerId)

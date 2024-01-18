@@ -2,6 +2,7 @@ Original-Server:
     allow: 
         - 192.168.1.0/24
         - 192.168.2.0/24
+        - 127.0.0.0/
 
 BalanceHub:
     listen: 5000
@@ -14,8 +15,4 @@ BalanceHub:
         db: 0
         password: ''
         caching: true
-        cache-duration: 3000
-
-        
-
-    
+        cache-duration: 900

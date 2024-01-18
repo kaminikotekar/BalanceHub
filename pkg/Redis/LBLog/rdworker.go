@@ -4,10 +4,10 @@ import (
 	"context"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
 	"github.com/redis/go-redis/v9"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
 	"log"
 	"os"
 )
-
 const (
 	logFileName = "/BalanceHub.log"
 	WARNING     = "WARNING"
@@ -17,14 +17,11 @@ const (
 
 var (
 	Initialized  = false
-	ctx          context.Context
-	client       *redis.Client
 	messageQueue chan *Message
 	WarningLog   *log.Logger
 	InfoLog      *log.Logger
 	ErrorLog     *log.Logger
 	lbLogger     *LBLogger
-	redisConfig  Config.RedisServer
 )
 
 type LBLogger struct {
@@ -34,10 +31,8 @@ type LBLogger struct {
 }
 
 func InitLogger() {
-
 	isRDLogger := false
-	redisConfig = Config.Configuration.GetRedisConfig()
-	if redisConfig.Ip != "" && redisConfig.Port != "" {
+	if Redis.RedisEnabled {
 		isRDLogger = true
 	}
 
@@ -55,18 +50,8 @@ func InitLogger() {
 		},
 		logFile: Config.Configuration.LoadBalancer.AccessLogsPath + logFileName,
 	}
-
-	ctx = GetContext()
-	client = GetRDClient()
 	messageQueue = getChannel()
 	Initialized = true
-}
-
-func GetContext() context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return ctx
 }
 
 func getChannel() chan *Message {
@@ -76,18 +61,6 @@ func getChannel() chan *Message {
 	return messageQueue
 }
 
-func GetRDClient() *redis.Client {
-
-	if client == nil {
-		client = redis.NewClient(&redis.Options{
-			Addr:     redisConfig.Ip + ":" + redisConfig.Port,
-			Password: redisConfig.Password,
-			DB:       redisConfig.Dbindex,
-		})
-	}
-	return client
-}
-
 func ProcessLogs() {
 	if !Initialized {
 		log.Println(WARNING, "Log worker not initialized !!")
@@ -95,6 +68,8 @@ func ProcessLogs() {
 	}
 	if lbLogger.isRDLogger {
 		for {
+			client := Redis.GetRDClient()
+			ctx := Redis.GetContext()
 			result, err := client.LPop(ctx, "logs").Result()
 			if err == nil {
 				// fmt.Println("Result: ", result)

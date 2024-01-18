@@ -2,6 +2,7 @@ package LBLog
 
 import (
 	"encoding/json"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
 	"log"
 	"time"
 )
@@ -35,7 +36,7 @@ func Log(flag string, message string) {
 		Flag:      flag,
 	}
 	if lbLogger.isRDLogger {
-		WriteRDMQ(ctx, client, msg.marshal())
+		WriteRDMQ(Redis.GetContext(), Redis.GetRDClient(), msg.marshal())
 		return
 	}
 	messageQueue <- msg

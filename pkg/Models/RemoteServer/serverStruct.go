@@ -144,7 +144,7 @@ func (m *Map) UpdateClientIP(clientIp string, serverid int) {
 }
 
 
-func ipInSubnet(ip, subnet string) bool{
+func IpInSubnet(ip, subnet string) bool{
 	ipAddr := net.ParseIP(ip)
 	_, subnetIPNet, err := net.ParseCIDR(subnet)
 	if err != nil {
@@ -161,7 +161,7 @@ func (m *Map) GetPossibleServers(clientIp string, path string) ([]int) {
 	subnetList := make([]string, 0, len(m.ipMap))
 
 	for key, _ := range m.ipMap {
-		if strings.Contains(key, "/") && ipInSubnet(clientIp, key) {
+		if strings.Contains(key, "/") && IpInSubnet(clientIp, key) {
 			subnetList = append(subnetList, key)// works
 			// subnetKey = key
 		}else if key == clientIp {
