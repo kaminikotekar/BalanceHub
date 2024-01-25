@@ -57,6 +57,6 @@ func (c *Connections) GetOptimalServer(servers []int) int {
 	return optimalServer
 }
 
-func (c *Connections) PrintConnections() {
-	fmt.Println("Connections ", c.activeConnections)
+func (c *Connections) ActiveConnections() map[int]int{
+	return c.activeConnections
 }

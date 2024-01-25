@@ -45,6 +45,10 @@ func GetRDClient() *redis.Client {
 	return client
 }
 
+func IsCacheAllowed() bool {
+	return redisConfig.Caching
+}
+
 func CacheDuration() int{
 	return redisConfig.CacheDuration
 }

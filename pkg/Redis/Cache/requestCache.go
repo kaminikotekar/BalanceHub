@@ -27,6 +27,9 @@ func GetFromCache(req *http.Request) ([]byte, error){
 }
 
 func CacheResponse(req *http.Request, response []byte) error{
+	if !Redis.IsCacheAllowed() {
+		return nil
+	}
 	key := generateCacheKey(req)
 	return cacheToDb(key, response)
 }

@@ -25,6 +25,9 @@ type RedisServer struct {
 
 type LoadBalancer struct {
 	Port           string      `yaml:"listen"`
+	Protocol       string      `yaml:"protocol"`
+	SSLCert        string      `yaml:"ssl_certificate"`
+	SSLKey         string      `yaml:"ssl_certificate_key"`
 	Algorithm      string      `yaml:"algorithm"`
 	RedisWorker    RedisServer `yaml:"redis-server"`
 	AccessLogsPath string      `yaml:"access-logs-path"`

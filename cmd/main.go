@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"bytes"
 	"strings"
+	"runtime"
+	"crypto/tls"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
 	"github.com/kaminikotekar/BalanceHub/pkg/Connection"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
@@ -27,49 +29,78 @@ type Packet struct {
 	Data []byte
 }
 
-func main() {
-	log.Println("Starting HTTP server...")
+
+func configTLS(config Config.LoadBalancer) *tls.Config {
+	
+	if config.Protocol == "HTTPS" {
+		cert, err := tls.LoadX509KeyPair(config.SSLCert, config.SSLKey)
+		if err != nil {
+			LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error loading TLS certificate and key: %s", err))
+			return nil
+		}
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			InsecureSkipVerify: true,
+		}
+		return tlsConfig
+	}
+	return nil
+}
+
+func init_server() (bool, net.Listener){
+
+	numCPU := runtime.NumCPU()
+	fmt.Println("Number of cores : ", numCPU)
+	runtime.GOMAXPROCS(2)
 	err := Config.LoadConfiguration()
+	LBConfig := Config.Configuration.LoadBalancer
+	if err != nil {
+		log.Fatal("Error Loading config ", err)
+		fmt.Println("Error Loading config ", err)
+		return false, nil
+	}
 	Redis.InitServer()
 	LBLog.InitLogger()
 	go LBLog.ProcessLogs()
-	error := Connection.LoadDB()
-	// fmt.Println(lmap)
-	if error {
-		return
+	if Connection.LoadDB() {
+		fmt.Println(" Error Loading DB ")
+		return false, nil
 	}
+	// Load cert
+	tlsConfig := configTLS(LBConfig)
 
-	LBLog.Log(LBLog.INFO, "Testing logs")
-	fmt.Println("config2.yaml ", Config.Configuration,  "err ", err)
-	fmt.Println("LB server: ", Config.Configuration.GetLBServer())
-
+	// Initialize remote server active connection pool
 	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
-	// loadBalancer := config.LoadBalancer
-	// remoteServers := config.OriginalServers
-	// connectionLoad := &Connection.Connections{
-	// 	ActiveConnections: make(map[Config.Server]int),
-	// }
-	// connectionLoad.InitializeLoadServers(remoteServers)
-	// LBRequestProtocol.Test()
 
-	// fmt.Println("loaad: ", connectionLoad)
-	// fmt.Println("Server List ", remoteServers)
-
+	// Initialize server
 	reverseProxy, err := net.Listen("tcp", Config.Configuration.GetLBServer())
 	if err != nil {
-		log.Printf("Error listening: %s", err.Error())
+		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error listening: %s", err.Error()))
+		return false, nil
+	}
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort()))
+	if tlsConfig != nil {
+		tlsListener := tls.NewListener(reverseProxy, tlsConfig)
+		return true, tlsListener
+	}
+	return true, reverseProxy
+}
+
+func main() {
+
+	flag, rProxy := init_server()
+	if !flag {
 		os.Exit(1)
 	}
-	
-	defer reverseProxy.Close()
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort()))
+	defer rProxy.Close()
 	for {
-		conn, err := reverseProxy.Accept()
+		conn, err := rProxy.Accept()
 		if err != nil {
-			log.Printf("Error accepting: %s \n", err.Error())
+			LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error accepting: %s \n", err.Error()))
 			continue
 		}
-		fmt.Println("Received connection from ", conn)
+
+		LBLog.Log(LBLog.INFO, fmt.Sprintf("Received connection from %s", conn))
 		// read data from connection
 		go handleConnection(conn)
 	}
@@ -204,7 +235,7 @@ func readHeader(reader *bufio.Reader) (*Packet, int, error) {
 	if p.Data[0] == 76 && p.Data[1] == 66 {
 		remainingLength = int(p.Data[3])
 		p.PacType = "LB"
-		fmt.Println("remaining length ", remainingLength)
+		LBLog.Log(LBLog.INFO, fmt.Sprintf("remaining length %d", remainingLength))
 	}
 	return &p, remainingLength, nil
 }
@@ -343,17 +374,42 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 	return dataToBereturned, nil
 }
 
+func wrapTLS (conn net.Conn) net.Conn{
+
+	// Wrap the connection
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		LBLog.Log(LBLog.WARNING, "Connection is not a TLS connection")
+		return nil
+	}
+
+	// Perform the TLS handshake
+	err := tlsConn.Handshake()
+	if err != nil {
+		LBLog.Log(LBLog.WARNING, fmt.Sprintf("TLS handshake error: %s", err.Error()))
+		log.Printf("TLS handshake error: %s", err.Error())
+	}
+	return tlsConn
+}
+
 func handleConnection(conn net.Conn) {
-	
 	defer conn.Close()
-	Connection.ConnectionMap.PrintConnections()
-	conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+	tlsConn := wrapTLS(conn)
+	if tlsConn == nil {
+		tlsConn = conn
+	}
+
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Connections : ", Connection.ConnectionMap.ActiveConnections()))
+	// conn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+	tlsConn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
 
 	// Create an request reader
    	reader := bufio.NewReader(conn)
+	reader = bufio.NewReader(tlsConn)
 
 	c := make(chan *Packet)
-	client := conn.RemoteAddr()
+	// client := conn.RemoteAddr()
+	client := tlsConn.RemoteAddr()
 	LBLog.Log(LBLog.INFO, fmt.Sprintf("client addr  %s", client))
 	go readBytes(c, reader)
 
@@ -367,7 +423,8 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			break
 		}
-		conn.Write(rdata)
+		// conn.Write(rdata)
+		tlsConn.Write(rdata)
 	}
 }
 

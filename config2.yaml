@@ -6,6 +6,9 @@ Original-Server:
 
 BalanceHub:
     listen: 5000
+    protocol: HTTPS
+    ssl_certificate: /path/to/cert
+    ssl_certificate_key: /path/to/key
     algorithm: "Least-Connected"
     access-logs-path: ./logs
     db-path: ''
