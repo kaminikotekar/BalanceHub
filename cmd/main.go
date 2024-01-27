@@ -24,7 +24,8 @@ import (
 )
 
 type Packet struct {
-	Remote net.Addr
+	ClientHost string
+	ClientPort string
 	PacType string
 	Data []byte
 }
@@ -148,6 +149,8 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 	fmt.Printf("connect type : %T \n", remoteServerConnect)
 	if err != nil {
 		fmt.Println("Error connecting to original server: ", err)
+		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error connecting to original server %s", uri))
+
 		return nil, err
 	}
 
@@ -285,11 +288,10 @@ func readBytes(c chan *Packet, reader *bufio.Reader){
 	}
 }
 
-func isAllowedRemote(remote net.Addr) bool {
+func isAllowedRemote(remoteHost string) bool {
 	allowedRemotes := Config.Configuration.OrigServer.AllowSubnet
-	remoteIP, _, _ := net.SplitHostPort(remote.String())
 	for _, subnet := range allowedRemotes {
-		if RemoteServer.IpInSubnet(remoteIP, subnet){
+		if RemoteServer.IpInSubnet(remoteHost, subnet){
 			return true
 		}
 	}
@@ -301,11 +303,11 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 	fmt.Println("buffer received : ", packet.Data)
 	if packet.PacType == "LB" {
 		fmt.Println("Handle LB request")
-		if !isAllowedRemote(packet.Remote){
+		if !isAllowedRemote(packet.ClientHost){
 			LBLog.Log(LBLog.WARNING, "LB packet requested unfulfilled as not allowed")
 			return nil, errors.New("Not Allowed")
 		}
-		res := decodeLBPacket(packet.Remote, packet.Data)
+		res := packet.decodeLBPacket()
 		fmt.Println("sending res " ,res)
 		return res, nil
 	}
@@ -322,23 +324,21 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 	fmt.Println("req body: ", req.Body)
 	if err != nil {
 		fmt.Println("Error reading HTTP request:", err)
+		LBLog.Log(LBLog.INFO, fmt.Sprintf("Error reading HTTP request from %s:%s", packet.ClientHost, packet.ClientPort))
 		return nil, err
 	}
-
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("HTTP request from %s:%s", packet.ClientHost, packet.ClientPort))
 	// Find Server with least active connection
 	url := req.URL.Path
 
 	fmt.Println("url: ", url)
-	fmt.Println("RemoteAddr: ", packet.Remote)
-	remoteIP, _, err := net.SplitHostPort(packet.Remote.String())
-	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers(remoteIP, url)
+	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers(packet.ClientHost, url)
 
 	fmt.Println("allowedServers: ", allowedServers)
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Allowed servers: %v", allowedServers))
 
-	fmt.Println("printing optimal server: ......")
-	remoteServerId := Connection.ConnectionMap.GetOptimalServer(allowedServers)
-
-	if remoteServerId == 0 {
+	// if no allowed server is found, then no access is allowed
+	if len(allowedServers) == 0 {
 		resBytes , err := getHttpRequestInBytes("401 Unauthorized", 
 												http.StatusUnauthorized,
 												"Unauthorized access",
@@ -355,23 +355,55 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 	res, err := Cache.GetFromCache(req)
 	if err == nil {
 		fmt.Println("Got response from cahce : ", res)
+		LBLog.Log(LBLog.INFO, "Using Cache")
 		return res, nil
 	}
 	fmt.Println("Request does not contain in cache: ", err)
 
-	fmt.Printf("server returned: %v\n", remoteServerId)
-	remoteServer := RemoteServer.RemoteServerMap.GetServerFromId(remoteServerId)
-	fmt.Println("Optimal Server: ", remoteServer)
 
-	Connection.ConnectionMap.AddConnection(remoteServerId)
-	defer Connection.ConnectionMap.RemoveConnection(remoteServerId)
+	data, err := tryRemoteConnection( packet.ClientHost, url, req)
 
-	dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
 	if err != nil {
-		return []byte("Server Error: " + err.Error()), nil
+		resBytes , err := getHttpRequestInBytes("503 Unauthorized", 
+												http.StatusServiceUnavailable,
+												"Service currently unavailable, Please try after sometime",
+												map[string]string{
+													"Content-Type": "text/plain",
+												})
+		if err != nil {	
+			return []byte("Something went wrong"),nil
+		}
+		return resBytes,nil
 	}
-	fmt.Println("Data to Bereturned: ", dataToBereturned)
-	return dataToBereturned, nil
+
+	return  data, nil
+}
+
+func tryRemoteConnection (clientHost string, clientUrl string, req *http.Request) ([]byte, error) {
+
+	remoteServerMap := RemoteServer.RemoteServerMap
+	connectionMap := Connection.ConnectionMap
+	totalTries := 3
+	for totalTries > 0 {
+		allowedServers := remoteServerMap.GetPossibleServers(clientHost, clientUrl)
+		if len(allowedServers) == 0 {
+			break
+		}
+		remoteServerId := connectionMap.GetOptimalServer(allowedServers)
+		connectionMap.AddConnection(remoteServerId)
+		remoteServer := remoteServerMap.GetServerFromId(remoteServerId)
+
+		dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
+		if err != nil {
+			connectionMap.RemoveConnection(remoteServerId)
+			remoteServerMap.RemoveServer(remoteServerId)
+			totalTries -= 1
+			continue
+		}
+		return dataToBereturned, nil
+	}
+
+	return nil, errors.New("Could not fulfill request")
 }
 
 func wrapTLS (conn net.Conn) net.Conn{
@@ -399,18 +431,15 @@ func handleConnection(conn net.Conn) {
 		tlsConn = conn
 	}
 
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("Connections : ", Connection.ConnectionMap.ActiveConnections()))
-	// conn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+	// LBLog.Log(LBLog.INFO, fmt.Sprintf("Connections : ", Connection.ConnectionMap.ActiveConnections()))
 	tlsConn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
 
 	// Create an request reader
-   	reader := bufio.NewReader(conn)
-	reader = bufio.NewReader(tlsConn)
+	reader := bufio.NewReader(tlsConn)
 
 	c := make(chan *Packet)
-	// client := conn.RemoteAddr()
-	client := tlsConn.RemoteAddr()
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("client addr  %s", client))
+	clientHost, clientPort, _ := net.SplitHostPort(tlsConn.RemoteAddr().String())
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("client addr  %s:%s", clientHost, clientPort))
 	go readBytes(c, reader)
 
 	for {
@@ -418,29 +447,27 @@ func handleConnection(conn net.Conn) {
 		if !ok {
 			break
 		}
-		packet.Remote = client
+		packet.ClientHost = clientHost
+		packet.ClientPort = clientPort
 		rdata, err := packet.handlePacket()
 		if err != nil {
 			break
 		}
-		// conn.Write(rdata)
 		tlsConn.Write(rdata)
 	}
 }
 
-func decodeLBPacket(remote net.Addr, buffer []byte) []byte{
+func (packet *Packet) decodeLBPacket() []byte{
 
-	decodedPacket, err := LBProtocol.DecodeToPacket(buffer)
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("REVEIVED LB Packet from %s:%s", packet.ClientHost, packet.ClientPort))
+	decodedPacket, err := LBProtocol.DecodeToPacket(packet.Data)
 	fmt.Println("decoded packet: ", decodedPacket)	
 	if err != nil {
 		fmt.Println("error : ", err)
 		return LBProtocol.GenerateResponse(true, "Packet error: Unable to decode packet")
 
 	}
-
-	remoteIP, remotePort, err := net.SplitHostPort(remote.String())
-	err = decodedPacket.HandleRemoteRequest(remoteIP, remotePort)
-
+	err = decodedPacket.HandleRemoteRequest(packet.ClientHost, packet.ClientPort)
 	if err != nil {
 		return LBProtocol.GenerateResponse(true, err.Error())
 	} else {

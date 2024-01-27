@@ -2,7 +2,7 @@ Original-Server:
     allow: 
         - 192.168.1.0/24
         - 192.168.2.0/24
-        - 127.0.0.0/
+        - 127.0.0.0/24
 
 BalanceHub:
     listen: 5000
