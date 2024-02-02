@@ -6,6 +6,7 @@ Original-Server:
 
 BalanceHub:
     listen: 5000
+    tcpListener: 5050
     protocol: HTTPS
     ssl_certificate: /path/to/cert
     ssl_certificate_key: /path/to/key

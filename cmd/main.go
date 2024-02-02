@@ -48,27 +48,31 @@ func configTLS(config Config.LoadBalancer) *tls.Config {
 	return nil
 }
 
-func init_server() (bool, net.Listener){
+func init_server() bool{
 
 	numCPU := runtime.NumCPU()
 	fmt.Println("Number of cores : ", numCPU)
 	runtime.GOMAXPROCS(2)
 	err := Config.LoadConfiguration()
-	LBConfig := Config.Configuration.LoadBalancer
 	if err != nil {
 		log.Fatal("Error Loading config ", err)
 		fmt.Println("Error Loading config ", err)
-		return false, nil
+		return false
 	}
 	Redis.InitServer()
 	LBLog.InitLogger()
 	go LBLog.ProcessLogs()
 	if Connection.LoadDB() {
 		fmt.Println(" Error Loading DB ")
-		return false, nil
+		return false
 	}
-	// Load cert
-	tlsConfig := configTLS(LBConfig)
+	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
+	return true
+}
+
+func getReverProxyServer(config Config.LoadBalancer) (bool, net.Listener) {
+
+	tlsConfig := configTLS(config)
 
 	// Initialize remote server active connection pool
 	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
@@ -79,35 +83,71 @@ func init_server() (bool, net.Listener){
 		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error listening: %s", err.Error()))
 		return false, nil
 	}
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort()))
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening TCP requests on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetLBPort()))
 	if tlsConfig != nil {
 		tlsListener := tls.NewListener(reverseProxy, tlsConfig)
 		return true, tlsListener
 	}
 	return true, reverseProxy
+
+}
+
+func getTCPServer(config Config.LoadBalancer) (bool, net.Listener) {
+
+	tcpListener, err := net.Listen("tcp", "localhost:"+config.TcpPort)
+	if err != nil {
+		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error listening: %s", err.Error()))
+		return false, nil
+	}
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Listening TCP requests on %s:%s ",Config.Configuration.GetLBIP(), Config.Configuration.GetTcpPort()))
+	return true, tcpListener
 }
 
 func main() {
 
-	flag, rProxy := init_server()
+	flag := init_server()
 	if !flag {
 		os.Exit(1)
 	}
-	defer rProxy.Close()
-	for {
-		conn, err := rProxy.Accept()
-		if err != nil {
-			LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error accepting: %s \n", err.Error()))
-			continue
-		}
-
-		LBLog.Log(LBLog.INFO, fmt.Sprintf("Received connection from %s", conn))
-		// read data from connection
-		go handleConnection(conn)
+	flag, rProxy := getReverProxyServer(Config.Configuration.LoadBalancer)
+	flag, tcpServer := getTCPServer(Config.Configuration.LoadBalancer)
+	if !flag {
+		os.Exit(1)
 	}
+
+	defer rProxy.Close()
+	defer tcpServer.Close()
+	// Handle HTTP connections
+	go func() {
+		for {
+			conn, err := rProxy.Accept()
+			if err != nil {
+				LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error accepting: %s \n", err.Error()))
+				continue
+			}
+
+			LBLog.Log(LBLog.INFO, fmt.Sprintf("Received connection from %s", conn))
+			go handleHttpConnection(conn)
+		}
+	}()
+	// Handle TCP Connections
+	go func() {
+		for {
+			conn, err := tcpServer.Accept()
+			if err != nil {
+				LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error accepting: %s \n", err.Error()))
+				continue
+			}
+
+			LBLog.Log(LBLog.INFO, fmt.Sprintf("Received connection from %s", conn))
+			go handleConnection(conn)
+		}
+	}()
+	select {}
+
 }
 
-func updateRequestParms(req *http.Request, uri string) error{
+func updateRequestParms(req *http.Request,client string, uri string) error{
 	newURL, err := url.Parse("http://"+uri)
 	if err != nil {
 		fmt.Println("Error parsing new URL:", err)
@@ -117,7 +157,7 @@ func updateRequestParms(req *http.Request, uri string) error{
 	req.URL.Host = newURL.Host
 	req.URL.Scheme = newURL.Scheme
 	req.RequestURI = ""
-
+	req.Header.Set("X-Forwarded-For", client)
 	return nil
 }
 
@@ -143,7 +183,7 @@ func writeResponseToBytes(res *http.Response) ([]byte, error){
 	return bytes, nil
 }
 
-func performReverseProxy(req *http.Request, uri string) ([]byte, error){
+func performReverseProxy(client string, req *http.Request, uri string) ([]byte, error){
 
 	remoteServerConnect, err := net.Dial("tcp", uri)
 	fmt.Printf("connect type : %T \n", remoteServerConnect)
@@ -154,7 +194,7 @@ func performReverseProxy(req *http.Request, uri string) ([]byte, error){
 		return nil, err
 	}
 
-	updateRequestParms(req, uri)
+	updateRequestParms(req, client, uri)
 	bytesToSend , err := writeRequestToBytes(req) 
 	if err != nil {
 		return nil, err
@@ -259,10 +299,6 @@ func readBytes(c chan *Packet, reader *bufio.Reader){
 			break
 		}
 		packet.Data = append(packet.Data, _byte)
-		if isEndOfHttpRequest(packet.Data){
-			// Reached end of packet, allow receiving new packet
-			newPacket = true
-		}
 		if remainingLength == payloadLength{
 			// Reached end of packet, allow receiving new packet
 			newPacket = true
@@ -311,72 +347,7 @@ func (packet *Packet) handlePacket() ([]byte, error) {
 		fmt.Println("sending res " ,res)
 		return res, nil
 	}
-
-	fmt.Println("HTTP request : ", string(packet.Data))
-
-	req, err := parseHTTPRequest(packet.Data)
-
-	if req == nil {
-		return nil, errors.New("Invalid request")
-	}
-	fmt.Println("request: ", req)
-	fmt.Printf("type: %T \n", req)
-	fmt.Println("req body: ", req.Body)
-	if err != nil {
-		fmt.Println("Error reading HTTP request:", err)
-		LBLog.Log(LBLog.INFO, fmt.Sprintf("Error reading HTTP request from %s:%s", packet.ClientHost, packet.ClientPort))
-		return nil, err
-	}
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("HTTP request from %s:%s", packet.ClientHost, packet.ClientPort))
-	// Find Server with least active connection
-	url := req.URL.Path
-
-	fmt.Println("url: ", url)
-	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers(packet.ClientHost, url)
-
-	fmt.Println("allowedServers: ", allowedServers)
-	LBLog.Log(LBLog.INFO, fmt.Sprintf("Allowed servers: %v", allowedServers))
-
-	// if no allowed server is found, then no access is allowed
-	if len(allowedServers) == 0 {
-		resBytes , err := getHttpRequestInBytes("401 Unauthorized", 
-												http.StatusUnauthorized,
-												"Unauthorized access",
-												map[string]string{
-													"Content-Type": "text/plain",
-												})
-		if err != nil {	
-			return []byte("Something went wrong"),nil
-		}
-		return resBytes,nil
-	}
-
-	// Find if request is cached
-	res, err := Cache.GetFromCache(req)
-	if err == nil {
-		fmt.Println("Got response from cahce : ", res)
-		LBLog.Log(LBLog.INFO, "Using Cache")
-		return res, nil
-	}
-	fmt.Println("Request does not contain in cache: ", err)
-
-
-	data, err := tryRemoteConnection( packet.ClientHost, url, req)
-
-	if err != nil {
-		resBytes , err := getHttpRequestInBytes("503 Unauthorized", 
-												http.StatusServiceUnavailable,
-												"Service currently unavailable, Please try after sometime",
-												map[string]string{
-													"Content-Type": "text/plain",
-												})
-		if err != nil {	
-			return []byte("Something went wrong"),nil
-		}
-		return resBytes,nil
-	}
-
-	return  data, nil
+	return nil, errors.New("Invalid Packet")
 }
 
 func tryRemoteConnection (clientHost string, clientUrl string, req *http.Request) ([]byte, error) {
@@ -393,7 +364,7 @@ func tryRemoteConnection (clientHost string, clientUrl string, req *http.Request
 		connectionMap.AddConnection(remoteServerId)
 		remoteServer := remoteServerMap.GetServerFromId(remoteServerId)
 
-		dataToBereturned, err := performReverseProxy(req, remoteServer.Ipaddress + ":" + remoteServer.Port)
+		dataToBereturned, err := performReverseProxy(clientHost, req, remoteServer.Ipaddress + ":" + remoteServer.Port)
 		if err != nil {
 			connectionMap.RemoveConnection(remoteServerId)
 			remoteServerMap.RemoveServer(remoteServerId)
@@ -424,21 +395,70 @@ func wrapTLS (conn net.Conn) net.Conn{
 	return tlsConn
 }
 
-func handleConnection(conn net.Conn) {
+func handleHttpConnection(conn net.Conn) {
 	defer conn.Close()
 	tlsConn := wrapTLS(conn)
 	if tlsConn == nil {
 		tlsConn = conn
 	}
 
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	client, _, _  := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		LBLog.Log(LBLog.INFO, fmt.Sprintf("Error reading HTTP request from %s", client))
+		return
+	}
+	url := req.URL.Path
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Request Method: %s, url: %s, client %s", req.Method, url, client))
+
+	allowedServers := RemoteServer.RemoteServerMap.GetPossibleServers(client, url)
+	LBLog.Log(LBLog.INFO, fmt.Sprintf("Allowed servers: %v", allowedServers))
+
+	var resBytes []byte
+	// if no allowed server is found, then no access is allowed
+	if len(allowedServers) == 0 {
+
+		resBytes , err = getHttpRequestInBytes("401 Unauthorized", 
+												http.StatusUnauthorized,
+												"Unauthorized access",
+												map[string]string{
+													"Content-Type": "text/plain",
+												})
+
+	} else if resBytes, err = Cache.GetFromCache(req); len(resBytes) != 0 {
+		LBLog.Log(LBLog.INFO, "Using Cache")
+		fmt.Println("bytes from cache ", resBytes)
+		fmt.Println(" err after checking cache ", err)
+	} else {
+		resBytes, err = tryRemoteConnection(client, url, req)
+		if err != nil {
+			resBytes , err = getHttpRequestInBytes("503 Unauthorized", 
+													http.StatusServiceUnavailable,
+													"Service currently unavailable, Please try after sometime",
+													map[string]string{
+														"Content-Type": "text/plain",
+													})
+		}
+	}
+
+	if err != nil {
+		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error getting response: %s", err.Error()))
+		return
+	}
+	conn.Write(resBytes)
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+
 	// LBLog.Log(LBLog.INFO, fmt.Sprintf("Connections : ", Connection.ConnectionMap.ActiveConnections()))
-	tlsConn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+	conn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
 
 	// Create an request reader
-	reader := bufio.NewReader(tlsConn)
+	reader := bufio.NewReader(conn)
 
 	c := make(chan *Packet)
-	clientHost, clientPort, _ := net.SplitHostPort(tlsConn.RemoteAddr().String())
+	clientHost, clientPort, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	LBLog.Log(LBLog.INFO, fmt.Sprintf("client addr  %s:%s", clientHost, clientPort))
 	go readBytes(c, reader)
 
@@ -453,7 +473,7 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			break
 		}
-		tlsConn.Write(rdata)
+		conn.Write(rdata)
 	}
 }
 

@@ -25,6 +25,7 @@ type RedisServer struct {
 
 type LoadBalancer struct {
 	Port           string      `yaml:"listen"`
+	TcpPort        string      `yaml:"tcpListener"`
 	Protocol       string      `yaml:"protocol"`
 	SSLCert        string      `yaml:"ssl_certificate"`
 	SSLKey         string      `yaml:"ssl_certificate_key"`
@@ -67,6 +68,10 @@ func (c *Config) GetLBIP() string {
 
 func (c *Config) GetLBPort() string {
 	return c.LoadBalancer.Port
+}
+
+func (c *Config) GetTcpPort() string {
+	return c.LoadBalancer.TcpPort
 }
 
 func (c *Config) GetRedisConfig() RedisServer {

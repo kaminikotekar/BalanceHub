@@ -3,6 +3,7 @@ package RemoteServer
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"net"
 )
 
@@ -18,7 +19,7 @@ type Server struct {
 }
 
 type Map struct {
-
+	mu sync.Mutex
 	serverMap map[int]*Server
 	pathMap map[string]map[int]*Server
 	ipMap map[string]map[int]*Server
@@ -35,6 +36,7 @@ func GenerateMap() {
 }
 
 func (m* Map) AddServer(serverId int, ipaddress string, port string) {
+	m.mu.Lock()
 	_, ok := m.serverMap[serverId]
 	if !ok {
 		m.serverMap[serverId] = &Server{
@@ -42,9 +44,11 @@ func (m* Map) AddServer(serverId int, ipaddress string, port string) {
 			Port: port,
 		}
 	}
+	m.mu.Unlock()
 }
 
 func (m * Map) RemoveServer(serverId int) {
+	m.mu.Lock()
 	delete(m.serverMap, serverId)
 	// Delete serverID from pathmap
 	for path, _ := range m.pathMap {
@@ -60,6 +64,7 @@ func (m * Map) RemoveServer(serverId int) {
 			delete(m.ipMap[client], serverId)
 		}
 	}
+	m.mu.Unlock()
 }
 
 func (m* Map) GetServerFromId(id int) *Server {
@@ -78,6 +83,8 @@ func (m *Map) hasPath(path string) bool {
 }
 
 func (m *Map) DeletePath(path string, serverId int){
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	_, ok := m.pathMap[path][serverId]
 	if !ok {
 		return 
@@ -87,6 +94,8 @@ func (m *Map) DeletePath(path string, serverId int){
 }
 
 func (m *Map) DeleteClient(clientIp string, serverId int){
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	_, ok := m.ipMap[clientIp][serverId]
 	if !ok {
 		return 
@@ -98,6 +107,7 @@ func (m *Map) DeleteClient(clientIp string, serverId int){
 func(m *Map) UpdatePath(path string, serverid int) {
 
 	// p.pathmap[path] = append(p.pathmap[path],server)
+	m.mu.Lock()
 	fmt.Println("Inside update path")
 	server := m.serverMap[serverid]
 	val, ok := m.pathMap[path]
@@ -112,6 +122,7 @@ func(m *Map) UpdatePath(path string, serverid int) {
 	}
 
 	m.pathMap[path][serverid] = server
+	m.mu.Unlock()
 }
 
 func (m *Map) isAllowedIP(ipaddress string) bool {
@@ -127,6 +138,7 @@ func (m *Map) isAllowedIP(ipaddress string) bool {
 }
 
 func (m *Map) UpdateClientIP(clientIp string, serverid int) {
+	m.mu.Lock()
 	fmt.Println("Inside update client IP")
 	server := m.serverMap[serverid]
 	val, ok := m.ipMap[clientIp]
@@ -141,6 +153,7 @@ func (m *Map) UpdateClientIP(clientIp string, serverid int) {
 		server.IpConsrt+= 1
 	}
 	m.ipMap[clientIp][serverid] = server
+	m.mu.Unlock()
 }
 
 

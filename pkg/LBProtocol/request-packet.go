@@ -148,6 +148,7 @@ func (p *LBPacket) HandleRemoteRequest(remoteIP string, remotePort string) error
     } else {
         if len(p.Payload.Paths)== 0 && len(p.Payload.Clients) == 0 {
             RemoteServer.RemoteServerMap.RemoveServer(RemoteID)
+            return nil
         }
         for _, path := range p.Payload.Paths {
             RemoteServer.RemoteServerMap.DeletePath(path, RemoteID)
