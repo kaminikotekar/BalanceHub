@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 	// "github.com/kaminikotekar/BalanceHub/pkg/Config"
-	// "github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
+	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 )
 
 type Connections struct {
@@ -57,6 +57,13 @@ func (c *Connections) GetOptimalServer(servers []int) int {
 	return optimalServer
 }
 
-func (c *Connections) ActiveConnections() map[int]int{
-	return c.activeConnections
+func (c *Connections) ActiveConnections() string{
+	str := "{"
+	for sid, value := range c.activeConnections{
+		remoteServer := RemoteServer.RemoteServerMap.GetServerFromId(sid)
+		server := remoteServer.Ipaddress+":"+remoteServer.Port
+		str += fmt.Sprintf("%s : %d, \n", server, value)
+	}
+	str += "}"
+	return str
 }
