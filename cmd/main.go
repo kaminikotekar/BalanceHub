@@ -413,7 +413,8 @@ func handleHttpConnection(c chan net.Conn) {
 		client, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 		if err != nil {
 			LBLog.Log(LBLog.INFO, fmt.Sprintf("Error reading HTTP request from %s", client))
-			return
+			conn.Close()
+			continue
 		}
 		url := req.URL.Path
 		LBLog.Log(LBLog.INFO, fmt.Sprintf("Request Method: %s, url: %s, client %s", req.Method, url, client))
@@ -448,7 +449,8 @@ func handleHttpConnection(c chan net.Conn) {
 
 		if err != nil {
 			LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error getting response: %s", err.Error()))
-			return
+			conn.Close()
+			continue
 		}
 		conn.Write(resBytes)
 		conn.Close()

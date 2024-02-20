@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 )
 
-const configFile = "config2.yaml"
+const configFile = "config.yaml"
 
 var Configuration *Config
 
