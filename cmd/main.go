@@ -232,7 +232,6 @@ func performReverseProxy(client string, req *http.Request, uri string) ([]byte, 
 	response, err := http.ReadResponse(reader, nil)
 	defer response.Body.Close()
 	if err != nil {
-		// fmt.Println("Error reading response:", err2)
 		return nil, err
 	}
 
@@ -427,7 +426,6 @@ func handleHttpConnection(c chan net.Conn) {
 		if !ok {
 			break
 		}
-		// defer conn.Close()
 		tlsConn := wrapTLS(conn)
 		if tlsConn == nil {
 			tlsConn = conn
@@ -483,8 +481,6 @@ func handleHttpConnection(c chan net.Conn) {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-
-	// LBLog.Log(LBLog.INFO, fmt.Sprintf("Connections : ", Connection.ConnectionMap.ActiveConnections()))
 	conn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
 
 	// Create an request reader

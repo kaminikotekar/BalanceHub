@@ -1,7 +1,6 @@
 package LBProtocol
 
 import (
-    "fmt"
     "github.com/google/gopacket"
 )
 
@@ -52,8 +51,6 @@ func (r RespLayer) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seriali
     // Serialize the custom data into the buffer
     length := 4 + len(r.Payload)
     byteArray, err := b.AppendBytes(length)
-    fmt.Println("byte: ", byteArray)
-    fmt.Printf("bytearray type: %T\n", byteArray)
     if err != nil {
         return err
     }

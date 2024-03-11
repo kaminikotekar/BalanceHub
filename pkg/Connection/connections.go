@@ -52,7 +52,6 @@ func (c *Connections) GetOptimalServer(servers []int) int {
 			optimalServer = sid
 		}
 	}
-	fmt.Println("Least Connections :", leastConnection)
 	c.mu.Unlock()
 	return optimalServer
 }

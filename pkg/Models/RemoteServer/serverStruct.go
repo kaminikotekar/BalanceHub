@@ -1,7 +1,7 @@
 package RemoteServer
 
 import (
-	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"net"
@@ -108,10 +108,8 @@ func(m *Map) UpdatePath(path string, serverid int) {
 
 	// p.pathmap[path] = append(p.pathmap[path],server)
 	m.mu.Lock()
-	fmt.Println("Inside update path")
 	server := m.serverMap[serverid]
-	val, ok := m.pathMap[path]
-	fmt.Println("Value:", val, "Err ", ok)
+	_, ok := m.pathMap[path]
 
 	if !ok{
 		m.pathMap[path] = make(map[int]*Server)
@@ -139,10 +137,8 @@ func (m *Map) isAllowedIP(ipaddress string) bool {
 
 func (m *Map) UpdateClientIP(clientIp string, serverid int) {
 	m.mu.Lock()
-	fmt.Println("Inside update client IP")
 	server := m.serverMap[serverid]
-	val, ok := m.ipMap[clientIp]
-	fmt.Println("Value:", val, "Err ", ok)
+	_, ok := m.ipMap[clientIp]
 
 	if !ok{
 		m.ipMap[clientIp] = make(map[int]*Server)
@@ -161,7 +157,7 @@ func IpInSubnet(ip, subnet string) bool{
 	ipAddr := net.ParseIP(ip)
 	_, subnetIPNet, err := net.ParseCIDR(subnet)
 	if err != nil {
-		fmt.Println("Error parsing subnet:", err)
+		log.Println("Error parsing subnet:", err)
 		return false
 	}
 
@@ -183,14 +179,11 @@ func (m *Map) GetPossibleServers(clientIp string, path string) ([]int) {
 		}
 		
 	}
-	fmt.Println("SubnetList: ", subnetList)
 	for k, server := range m.serverMap {
 		_, res1 := m.pathMap[path][k]
 		var res2 bool
 		for _, subnetKey := range subnetList {
 			_, res2 = m.ipMap[subnetKey][k]
-			fmt.Println("IPMap for subnetKey: ", m.ipMap[subnetKey])
-			fmt.Println("Subnet key : ", subnetKey, "result : ", res2)
 			if res2 {
 				break
 			}

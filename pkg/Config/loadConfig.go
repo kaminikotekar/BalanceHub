@@ -1,7 +1,7 @@
 package Config
 
 import (
-	"fmt"
+	"log"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
 )
@@ -44,15 +44,14 @@ func LoadConfiguration() error {
 	var c Config
 	yamlFile, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		fmt.Printf("Error reading YAML file: %v", err)
+		log.Printf("Error reading YAML file: %v", err)
 		return err
 	}
 	err = yaml.Unmarshal(yamlFile, &c)
 	if err != nil {
-		fmt.Println("Error unmarsh ", err)
+		log.Println("Error unmarsh ", err)
 		return err
 	}
-	fmt.Println("Configuration ", Configuration)
 	Configuration = &c
 	return nil
 }
