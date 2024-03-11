@@ -13,6 +13,7 @@ import (
 	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
 	"github.com/kaminikotekar/BalanceHub/pkg/Redis/Cache"
 	"github.com/kaminikotekar/BalanceHub/pkg/Redis/LBLog"
+	"github.com/gofor-little/env"
 	"io"
 	"log"
 	"net"
@@ -21,8 +22,11 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"strconv"
 	"time"
 )
+
+var DEFAULT_WORKERS = "2"
 
 type Packet struct {
 	ClientHost string
@@ -48,11 +52,25 @@ func configTLS(config Config.LoadBalancer) *tls.Config {
 	return nil
 }
 
+func reWriteConfig(){
+	if err := env.Write("DB_PASSWORD", "***", ".env", false); err != nil {
+		panic(err)
+	}
+	if err := env.Write("REDIS_PASSWORD", "***", ".env", false); err != nil {
+		panic(err)
+	}
+}
+
 func init_server() bool {
 
-	// numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(3)
-	err := Config.LoadConfiguration()
+	if err := env.Load(".env"); err != nil {
+		panic(err)
+	}
+	workers, err := strconv.Atoi(env.Get("numCPU", DEFAULT_WORKERS))
+	if err == nil {
+		runtime.GOMAXPROCS(workers)
+	}
+	err = Config.LoadConfiguration()
 	if err != nil {
 		log.Fatal("Error Loading config ", err)
 		return false
@@ -65,6 +83,7 @@ func init_server() bool {
 		return false
 	}
 	Connection.InitConnection(RemoteServer.RemoteServerMap.GetServerIds())
+	reWriteConfig()
 	return true
 }
 
@@ -107,6 +126,11 @@ func main() {
 	if !flag {
 		os.Exit(1)
 	}
+	
+	workers, err := strconv.Atoi(env.Get("numCPU", DEFAULT_WORKERS))
+	if err != nil {
+		workers = 2
+	}
 	flag, rProxy := getReverProxyServer(Config.Configuration.LoadBalancer)
 	flag, tcpServer := getTCPServer(Config.Configuration.LoadBalancer)
 	if !flag {
@@ -131,7 +155,7 @@ func main() {
 		}
 	}()
 
-	for i := 1; i <= 4; i++{
+	for i := 1; i <= workers; i++{
 		go handleHttpConnection(httpsConnBuffer)
 	}
 	

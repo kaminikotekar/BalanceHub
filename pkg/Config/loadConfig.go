@@ -18,7 +18,6 @@ type RedisServer struct {
 	Ip            string `yaml:"ip"`
 	Port          string `yaml:"port"`
 	Dbindex       int    `yaml:"db"`
-	Password      string `yaml:"password"`
 	Caching       bool   `yaml:"caching"`
 	CacheDuration int    `yaml:"cache-duration"`
 }

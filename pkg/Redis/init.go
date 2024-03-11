@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
 	"github.com/redis/go-redis/v9"
+	"os"
 )
 
 var (
@@ -38,7 +39,7 @@ func GetRDClient() *redis.Client {
 	if client == nil {
 		client = redis.NewClient(&redis.Options{
 			Addr:     redisConfig.Ip + ":" + redisConfig.Port,
-			Password: redisConfig.Password,
+			Password: os.Getenv("REDIS_PASSWORD"),
 			DB:       redisConfig.Dbindex,
 		})
 	}

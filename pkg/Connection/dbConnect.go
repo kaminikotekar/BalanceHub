@@ -9,17 +9,37 @@ import (
 	"io/ioutil"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
+	"github.com/gofor-little/env"
 	_"github.com/mattn/go-sqlite3" 
 )	
 
 var DB_FILE string
+
+func getConnectionString() string {
+
+	dbName := env.Get("DB_NAME", DB_FILE_NAME)
+	dbUser ,err := env.MustGet("DB_USER")
+	dbPassword ,err := env.MustGet("DB_PASSWORD")
+	if err != nil {
+		log.Fatal("Could not fetch DB credentials")
+	}
+
+	DB_FILE = Config.Configuration.LoadBalancer.DBPath + dbName
+	DB_USER := dbUser
+	DB_PASS := dbPassword
+
+	connectionString := fmt.Sprintf("%s?_auth&_auth_user=%s&_auth_pass=%s", DB_FILE, DB_USER, DB_PASS)
+	return connectionString
+}
+
+
 /*-----------------------------------------------------------------------------------------*/
 func LoadDB() (bool){
 
-	DB_FILE = Config.Configuration.LoadBalancer.DBPath + DB_FILE_NAME
-	sqliteDB, err := sql.Open("sqlite3", DB_FILE)
+	sqliteDB, err := sql.Open("sqlite3", getConnectionString())
 	defer sqliteDB.Close() 
 	if err != nil {
+		log.Fatal("Connection to DB failed: ", err)
 		fmt.Println("Error ,", err)
 		fmt.Println("Database, ", sqliteDB)
 		return true
@@ -119,7 +139,7 @@ func LoadDB() (bool){
 }
 /*-----------------------------------------------------------------------------------------*/
 func HandleDBRequests(action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
-	dbCon, err := sql.Open("sqlite3", DB_FILE)
+	dbCon, err := sql.Open("sqlite3", getConnectionString())
 	_, err = dbCon.Exec("PRAGMA foreign_keys = ON;")
 	var pkid int
 	if err != nil {
@@ -218,6 +238,10 @@ func createIfNotExist(dbCon *sql.DB) error{
 		rows, err := dbCon.Query(fmt.Sprintf(query, table_name))
 		fmt.Printf("type of row %T", rows)
 		fmt.Println("err for create table if exists", err)
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
 		rows.Next()
 		rows.Scan(&count)
 		rows.Close()
