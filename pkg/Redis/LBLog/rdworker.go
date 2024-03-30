@@ -3,11 +3,12 @@ package LBLog
 import (
 	"context"
 	"github.com/kaminikotekar/BalanceHub/pkg/Config"
-	"github.com/redis/go-redis/v9"
 	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"os"
 )
+
 const (
 	logFileName = "/BalanceHub.log"
 	WARNING     = "WARNING"

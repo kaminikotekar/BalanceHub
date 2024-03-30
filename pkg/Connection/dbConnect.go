@@ -3,23 +3,23 @@ package Connection
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"log"
-	"strings"
-	"io/ioutil"
-	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
-	"github.com/kaminikotekar/BalanceHub/pkg/Config"
 	"github.com/gofor-little/env"
-	_"github.com/mattn/go-sqlite3" 
-)	
+	"github.com/kaminikotekar/BalanceHub/pkg/Config"
+	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
+	_ "github.com/mattn/go-sqlite3"
+	"io/ioutil"
+	"log"
+	"os"
+	"strings"
+)
 
 var DB_FILE string
 
 func getConnectionString() string {
 
 	dbName := env.Get("DB_NAME", DB_FILE_NAME)
-	dbUser ,err := env.MustGet("DB_USER")
-	dbPassword ,err := env.MustGet("DB_PASSWORD")
+	dbUser, err := env.MustGet("DB_USER")
+	dbPassword, err := env.MustGet("DB_PASSWORD")
 	if err != nil {
 		log.Fatal("Could not fetch DB credentials")
 	}
@@ -32,12 +32,11 @@ func getConnectionString() string {
 	return connectionString
 }
 
-
 /*-----------------------------------------------------------------------------------------*/
-func LoadDB() (bool){
+func LoadDB() bool {
 
 	sqliteDB, err := sql.Open("sqlite3", getConnectionString())
-	defer sqliteDB.Close() 
+	defer sqliteDB.Close()
 	if err != nil {
 		log.Fatal("Connection to DB failed: ", err)
 		return true
@@ -46,7 +45,7 @@ func LoadDB() (bool){
 	_, error := os.Stat(DB_FILE)
 	if os.IsNotExist(error) {
 		log.Printf("%v file does not exist\n", DB_FILE)
-		_, err := os.Create(DB_FILE)  //create a new file
+		_, err := os.Create(DB_FILE) //create a new file
 		if err != nil {
 			log.Println("could not create database")
 			return true
@@ -57,7 +56,7 @@ func LoadDB() (bool){
 			return true
 		}
 		_, err = sqliteDB.Exec(string(initSQL))
-		if err != nil{
+		if err != nil {
 			log.Println("Could not execute init file ", err)
 			return true
 		}
@@ -78,7 +77,7 @@ func LoadDB() (bool){
 		log.Println("Error while loading servers")
 		return true
 	}
-	
+
 	if loadPaths(sqliteDB, RemoteServer.RemoteServerMap) != nil {
 		log.Println("Error while loading paths")
 		return true
@@ -90,8 +89,9 @@ func LoadDB() (bool){
 	}
 	return false
 }
+
 /*-----------------------------------------------------------------------------------------*/
-func HandleDBRequests(action bool, serverIP string, serverPort string, paths []string, clients []string) (int,error) {
+func HandleDBRequests(action bool, serverIP string, serverPort string, paths []string, clients []string) (int, error) {
 	dbCon, err := sql.Open("sqlite3", getConnectionString())
 	_, err = dbCon.Exec("PRAGMA foreign_keys = ON;")
 	var pkid int
@@ -99,7 +99,6 @@ func HandleDBRequests(action bool, serverIP string, serverPort string, paths []s
 		return pkid, err
 	}
 	defer dbCon.Close()
-
 
 	txn, err := dbCon.Begin()
 	if err != nil {
@@ -114,7 +113,7 @@ func HandleDBRequests(action bool, serverIP string, serverPort string, paths []s
 		return HandleInsertRequests(txn, pkid, getInterfaceArray(paths, pkid), getInterfaceArray(clients, pkid))
 	} else {
 		pkid, err := getServerID(txn, serverIP, serverPort)
-		if err != nil {	
+		if err != nil {
 			return pkid, err
 		}
 		return HandleDeleteRequests(txn, pkid, getInterfaceArray(paths, 0), getInterfaceArray(clients, 0))
@@ -123,13 +122,13 @@ func HandleDBRequests(action bool, serverIP string, serverPort string, paths []s
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func HandleInsertRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []interface{}) (int,error){
+func HandleInsertRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []interface{}) (int, error) {
 
-	if err := insertPath(txn, pkid, paths...); err != nil{
+	if err := insertPath(txn, pkid, paths...); err != nil {
 		return pkid, err
 	}
 
-	if err := insertClient(txn, pkid, clients...); err != nil{
+	if err := insertClient(txn, pkid, clients...); err != nil {
 		return pkid, err
 	}
 
@@ -142,18 +141,18 @@ func HandleInsertRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func HandleDeleteRequests(txn *sql.Tx, pkid int,  paths []interface{}, clients []interface{}) (int,error){
+func HandleDeleteRequests(txn *sql.Tx, pkid int, paths []interface{}, clients []interface{}) (int, error) {
 
 	var err error
 	if len(paths) == 0 && len(clients) == 0 {
 		err = deleteServer(txn, pkid)
 	}
 
-	if err := deletePath(txn, pkid, paths...); err != nil{
+	if err := deletePath(txn, pkid, paths...); err != nil {
 		return pkid, err
 	}
 
-	if err := deleteClient(txn, pkid, clients...); err != nil{
+	if err := deleteClient(txn, pkid, clients...); err != nil {
 		return pkid, err
 	}
 
@@ -176,17 +175,17 @@ func getInterfaceArray(list []string, val int) []interface{} {
 			inter = append(inter, i, val)
 		}
 	}
-	return  inter
+	return inter
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func createIfNotExist(dbCon *sql.DB) error{
-	
+func createIfNotExist(dbCon *sql.DB) error {
+
 	var count int
 	query := `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='%s'`
-	tables  := [3]string{SERVER_TABLE_NAME, PATH_MAPPING_TABLE_NAME, ADDRESS_MAPPING_TABLE_NAME}
+	tables := [3]string{SERVER_TABLE_NAME, PATH_MAPPING_TABLE_NAME, ADDRESS_MAPPING_TABLE_NAME}
 
-	for _,table_name := range tables{
+	for _, table_name := range tables {
 		rows, err := dbCon.Query(fmt.Sprintf(query, table_name))
 		if err != nil {
 			log.Fatal(err)
@@ -206,7 +205,7 @@ func createIfNotExist(dbCon *sql.DB) error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func createTable(dbCon *sql.DB, tableName string)  error{
+func createTable(dbCon *sql.DB, tableName string) error {
 
 	var query string
 	if tableName == SERVER_TABLE_NAME {
@@ -226,7 +225,7 @@ func createTable(dbCon *sql.DB, tableName string)  error{
 			"serverid" integer NOT NULL,
 			FOREIGN KEY(serverid) REFERENCES servers(pkid)
 		);`
-	} else if tableName == ADDRESS_MAPPING_TABLE_NAME{
+	} else if tableName == ADDRESS_MAPPING_TABLE_NAME {
 		query = `
 			CREATE TABLE %s (
 			"pkid" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -247,7 +246,7 @@ func createTable(dbCon *sql.DB, tableName string)  error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
+func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error {
 
 	query := "SELECT * FROM servers"
 	rows, err := dbCon.Query(query)
@@ -256,14 +255,14 @@ func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
 	}
 	defer rows.Close()
 
-	for rows.Next() { 
+	for rows.Next() {
 		var id int
 		var ipaddress string
 		var port string
 		var pathConst bool
 		var ipConst bool
 
-		rows.Scan(&id, &ipaddress, &port, &pathConst, &ipConst)		
+		rows.Scan(&id, &ipaddress, &port, &pathConst, &ipConst)
 		m.AddServer(id, ipaddress, port)
 	}
 	return nil
@@ -272,7 +271,7 @@ func loadRemoteServers(dbCon *sql.DB, m *RemoteServer.Map) error{
 /*-----------------------------------------------------------------------------------------*/
 func QxecuteQuery(dbCon *sql.Tx, sql string, args ...interface{}) error {
 
-	statement, err := dbCon.Prepare(sql) 
+	statement, err := dbCon.Prepare(sql)
 	if err != nil {
 		log.Fatal(err.Error())
 		return err
@@ -285,32 +284,32 @@ func QxecuteQuery(dbCon *sql.Tx, sql string, args ...interface{}) error {
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func insertServer(dbCon *sql.Tx , ip string, port string) (int,error) {
+func insertServer(dbCon *sql.Tx, ip string, port string) (int, error) {
 
 	var pkid int
 	insertSQL := `INSERT INTO servers(ipaddress, port) VALUES (?, ?) RETURNING pkid`
 
-	statement, err := dbCon.Prepare(insertSQL) 
+	statement, err := dbCon.Prepare(insertSQL)
 	if err != nil {
 		log.Println("error ", err.Error())
-		return pkid,err
+		return pkid, err
 	}
 	err = statement.QueryRow(ip, port).Scan(&pkid)
 	if err != nil {
 
 		statement, err = dbCon.Prepare("SELECT pkid FROM servers WHERE ipaddress = ? AND port = ?")
 		rows, err := statement.Query(ip, port)
-		
+
 		if err != nil {
-			return pkid,err
+			return pkid, err
 		}
-		for rows.Next() { 
+		for rows.Next() {
 			rows.Scan(&pkid)
 		}
-		rows.Close() 
+		rows.Close()
 		return pkid, nil
 	}
-	return pkid,nil
+	return pkid, nil
 }
 
 /*-----------------------------------------------------------------------------------------*/
@@ -341,7 +340,7 @@ func insertClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 		placeholder[i] = "(?, ?)"
 	}
 
-	insertSQL := "INSERT OR IGNORE INTO addressmappings(ipaddress, serverid) VALUES " + strings.Join(placeholder,",")
+	insertSQL := "INSERT OR IGNORE INTO addressmappings(ipaddress, serverid) VALUES " + strings.Join(placeholder, ",")
 	err := QxecuteQuery(dbCon, insertSQL, args...)
 	updateServer := `UPDATE servers SET ipconstraint = 'TRUE' WHERE pkid =?`
 	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
@@ -352,7 +351,7 @@ func insertClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 func getServerID(dbCon *sql.Tx, hostIP string, hostPort string) (int, error) {
 	var pkid int
 	sql := "SELECT pkid FROM servers where ipaddress = ? and port = ?;"
-	rows, err := dbCon.Query(sql, hostIP, hostPort) 
+	rows, err := dbCon.Query(sql, hostIP, hostPort)
 	if err != nil {
 		log.Println("Error ", err.Error())
 		return pkid, err
@@ -361,12 +360,12 @@ func getServerID(dbCon *sql.Tx, hostIP string, hostPort string) (int, error) {
 	for rows.Next() {
 		rows.Scan(&pkid)
 	}
-	
+
 	return pkid, nil
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func deleteServer(dbCon *sql.Tx, hostID int) error{
+func deleteServer(dbCon *sql.Tx, hostID int) error {
 	deleteSQL := "DELETE FROM servers WHERE pkid = ?"
 	err := QxecuteQuery(dbCon, deleteSQL, hostID)
 	if err != nil {
@@ -385,7 +384,7 @@ func deletePath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 	for i := range placeholder {
 		placeholder[i] = "?"
 	}
-	deleteSQL := "DELETE FROM pathmappings WHERE path in (" + strings.Join(placeholder, ",")+ ") AND serverid = ?;"
+	deleteSQL := "DELETE FROM pathmappings WHERE path in (" + strings.Join(placeholder, ",") + ") AND serverid = ?;"
 	err := QxecuteQuery(dbCon, deleteSQL, append(args, hostID)...)
 	if err != nil {
 		log.Println("Error deleting path : ", err)
@@ -393,13 +392,13 @@ func deletePath(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 	}
 
 	updateServer := `UPDATE servers SET pathconstraint = 'FALSE' WHERE NOT EXISTS (SELECT * FROM  pathmappings WHERE serverid = ?); `
-	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))	
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
 	return err
 }
 
 /*-----------------------------------------------------------------------------------------*/
 func deleteClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
-	
+
 	if len(args) == 0 {
 		return nil
 	}
@@ -407,7 +406,7 @@ func deleteClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 	for i := range placeholder {
 		placeholder[i] = "?"
 	}
-	deleteSQL := "DELETE FROM addressmappings WHERE ipaddress in (" + strings.Join(placeholder, ",")+ ") AND serverid = ?;"
+	deleteSQL := "DELETE FROM addressmappings WHERE ipaddress in (" + strings.Join(placeholder, ",") + ") AND serverid = ?;"
 	err := QxecuteQuery(dbCon, deleteSQL, append(args, hostID)...)
 	if err != nil {
 		log.Println("Error deleting client : ", err)
@@ -415,12 +414,12 @@ func deleteClient(dbCon *sql.Tx, hostID int, args ...interface{}) error {
 	}
 
 	updateServer := `UPDATE servers SET ipconstraint = 'FALSE' WHERE NOT EXISTS (SELECT * FROM  addressmappings WHERE serverid = ?); `
-	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))	
+	err = QxecuteQuery(dbCon, updateServer, fmt.Sprint(hostID))
 	return err
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func showTable(dbCon *sql.DB) error{
+func showTable(dbCon *sql.DB) error {
 
 	log.Println("**************************** SERVER TABLE ****************************")
 	showServer := `
@@ -440,14 +439,14 @@ func showTable(dbCon *sql.DB) error{
 		rows.Scan(&pkid, &ipaddress, &port, &pathconstraint, &ipconstraint)
 		log.Println("Server ", pkid, " ", ipaddress, " ", port, " ", pathconstraint, " ", ipconstraint)
 	}
-	rows.Close() 
+	rows.Close()
 
 	log.Println("**************************** PATH TABLE ****************************")
 
 	showPath := `
 		SELECT pkid, path, serverid from pathmappings;
 		`
-	rows2, err := dbCon.Query(showPath)	
+	rows2, err := dbCon.Query(showPath)
 	if err != nil {
 		log.Println("Error ", err.Error())
 		return err
@@ -460,7 +459,7 @@ func showTable(dbCon *sql.DB) error{
 		rows2.Scan(&pkid, &path, &serverid)
 		log.Println("Pathid ", pkid, " path ", path, " serverID ", serverid)
 	}
-	rows2.Close() 
+	rows2.Close()
 
 	fmt.Println("**************************** Client TABLE****************************")
 
@@ -479,12 +478,12 @@ func showTable(dbCon *sql.DB) error{
 		rows3.Scan(&pkid, &client, &serverid)
 		log.Println("ClientID ", pkid, " ClientIP ", client, " serverID ", serverid)
 	}
-	rows3.Close() 
+	rows3.Close()
 	return nil
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func loadPaths(dbCon *sql.DB, m *RemoteServer.Map) error{
+func loadPaths(dbCon *sql.DB, m *RemoteServer.Map) error {
 
 	showPaths := `
 		SELECT s.pkid, p.path, s.ipaddress, s.port FROM pathmappings AS p
@@ -495,9 +494,9 @@ func loadPaths(dbCon *sql.DB, m *RemoteServer.Map) error{
 		log.Println("Error ", err.Error())
 		return err
 	}
-	defer rows.Close() 
+	defer rows.Close()
 
-	for rows.Next() { 
+	for rows.Next() {
 		var path string
 		var ipaddress string
 		var port string
@@ -511,7 +510,7 @@ func loadPaths(dbCon *sql.DB, m *RemoteServer.Map) error{
 }
 
 /*-----------------------------------------------------------------------------------------*/
-func loadIpConstraint(dbCon *sql.DB, m *RemoteServer.Map) error{
+func loadIpConstraint(dbCon *sql.DB, m *RemoteServer.Map) error {
 
 	showIpConstraints := `
 		SELECT s.pkid, i.ipaddress, s.ipaddress, s.port FROM addressmappings AS i
@@ -522,9 +521,9 @@ func loadIpConstraint(dbCon *sql.DB, m *RemoteServer.Map) error{
 		log.Println("Error ", err.Error())
 		return err
 	}
-	defer rows.Close() 
+	defer rows.Close()
 
-	for rows.Next() { 
+	for rows.Next() {
 		var clientIp string
 		var ipaddress string
 		var port string
@@ -536,6 +535,3 @@ func loadIpConstraint(dbCon *sql.DB, m *RemoteServer.Map) error{
 	return nil
 
 }
-
-
-

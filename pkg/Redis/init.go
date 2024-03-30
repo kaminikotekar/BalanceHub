@@ -8,11 +8,11 @@ import (
 )
 
 var (
-	Initialized = false
+	Initialized  = false
 	RedisEnabled bool
-	ctx	context.Context
-	client *redis.Client
-	redisConfig Config.RedisServer
+	ctx          context.Context
+	client       *redis.Client
+	redisConfig  Config.RedisServer
 )
 
 func InitServer() {
@@ -50,8 +50,6 @@ func IsCacheAllowed() bool {
 	return redisConfig.Caching
 }
 
-func CacheDuration() int{
+func CacheDuration() int {
 	return redisConfig.CacheDuration
 }
-
-

@@ -3,12 +3,11 @@ package Connection
 import (
 	"fmt"
 	"sync"
-	// "github.com/kaminikotekar/BalanceHub/pkg/Config"
 	"github.com/kaminikotekar/BalanceHub/pkg/Models/RemoteServer"
 )
 
 type Connections struct {
-	mu sync.Mutex
+	mu                sync.Mutex
 	activeConnections map[int]int
 }
 
@@ -40,14 +39,14 @@ func (c *Connections) GetOptimalServer(servers []int) int {
 	c.mu.Lock()
 	leastConnection := -1
 	var optimalServer int
-	for _,sid := range servers{
+	for _, sid := range servers {
 		connections := c.activeConnections[sid]
-		if leastConnection == -1{
+		if leastConnection == -1 {
 			leastConnection = connections
 			optimalServer = sid
 			continue
 		}
-		if connections < leastConnection{
+		if connections < leastConnection {
 			leastConnection = connections
 			optimalServer = sid
 		}
@@ -56,11 +55,11 @@ func (c *Connections) GetOptimalServer(servers []int) int {
 	return optimalServer
 }
 
-func (c *Connections) ActiveConnections() string{
+func (c *Connections) ActiveConnections() string {
 	str := "{"
-	for sid, value := range c.activeConnections{
+	for sid, value := range c.activeConnections {
 		remoteServer := RemoteServer.RemoteServerMap.GetServerFromId(sid)
-		server := remoteServer.Ipaddress+":"+remoteServer.Port
+		server := remoteServer.Ipaddress + ":" + remoteServer.Port
 		str += fmt.Sprintf("%s : %d, \n", server, value)
 	}
 	str += "}"

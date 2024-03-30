@@ -2,12 +2,12 @@ package Cache
 
 import (
 	"fmt"
+	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
 	"net/http"
 	"time"
-	"github.com/kaminikotekar/BalanceHub/pkg/Redis"
 )
 
-func generateCacheKey(req *http.Request) string{
+func generateCacheKey(req *http.Request) string {
 
 	url := req.URL.Path
 	method := req.Method
@@ -18,7 +18,7 @@ func generateCacheKey(req *http.Request) string{
 	return ""
 }
 
-func GetFromCache(req *http.Request) ([]byte, error){
+func GetFromCache(req *http.Request) ([]byte, error) {
 	key := generateCacheKey(req)
 
 	response, err := Redis.GetRDClient().Get(Redis.GetContext(), key).Result()
@@ -26,7 +26,7 @@ func GetFromCache(req *http.Request) ([]byte, error){
 	return []byte(response), err
 }
 
-func CacheResponse(req *http.Request, response []byte) error{
+func CacheResponse(req *http.Request, response []byte) error {
 	if !Redis.IsCacheAllowed() {
 		return nil
 	}
@@ -34,7 +34,7 @@ func CacheResponse(req *http.Request, response []byte) error{
 	return cacheToDb(key, response)
 }
 
-func cacheToDb(key string, response []byte) error{
+func cacheToDb(key string, response []byte) error {
 	cacheDuration := time.Duration(Redis.CacheDuration()) * time.Second
 	return Redis.GetRDClient().Set(Redis.GetContext(), key, response, cacheDuration).Err()
 }
