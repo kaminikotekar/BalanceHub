@@ -57,11 +57,11 @@ func LoadConfiguration() error {
 }
 
 func (c *Config) GetLBServer() string {
-	return "localhost:" + c.LoadBalancer.Port
+	return "0.0.0.0:" + c.LoadBalancer.Port
 }
 
 func (c *Config) GetLBIP() string {
-	return "localhost:"
+	return "0.0.0.0:"
 }
 
 func (c *Config) GetLBPort() string {

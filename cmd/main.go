@@ -111,7 +111,7 @@ func getReverProxyServer(config Config.LoadBalancer) (bool, net.Listener) {
 
 func getTCPServer(config Config.LoadBalancer) (bool, net.Listener) {
 
-	tcpListener, err := net.Listen("tcp", "localhost:"+config.TcpPort)
+	tcpListener, err := net.Listen("tcp", "0.0.0.0:"+config.TcpPort)
 	if err != nil {
 		LBLog.Log(LBLog.WARNING, fmt.Sprintf("Error listening: %s", err.Error()))
 		return false, nil
@@ -133,6 +133,7 @@ func main() {
 	}
 	flag, rProxy := getReverProxyServer(Config.Configuration.LoadBalancer)
 	flag, tcpServer := getTCPServer(Config.Configuration.LoadBalancer)
+	log.Println("Starting server")
 	if !flag {
 		os.Exit(1)
 	}
