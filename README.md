@@ -63,7 +63,7 @@ Remote servers can be dynamically configured by sending custom tcp based request
 
     <!-- >Note: If paths are not specified then all the clients will be whitelisted -->
 
-###### 2. Response Structure 
+###### 2. Response Packet 
 * <b>Protocol</b>: `RE`
 * <b>Action</b>: 
     * `0xFF` &rarr; Success
